@@ -120,9 +120,16 @@ function toValueGray(r8, g8, b8) {
 
 ## 4. 次の一歩 (MVP案)
 
-### Phase 0: スパイク
-- 静的HTMLで `?img=URL` 受けて linear-Y のグレースケール表示
-- iPhone Safariでホーム画面追加 → `getUserMedia`動作確認
+### Phase 0: アルゴリズム比較検証
+- 5アルゴリズム横並びの比較ツール `compare.html` を作る
+  - (a) HSL desaturation（悪い例、参照用）
+  - (b) Rec.601 Y' (gamma)
+  - (c) Rec.709 Y' (gamma) ← Photoshop/Procreateの "Color" ブレンド想定
+  - (d) Linear-Y → sRGB（現推奨）
+  - (e) L\* (CIELAB)
+- ユーザーが現状ペイントアプリで作成したヴァルール画像 (= ground truth) と並べて目視比較
+- **目的**: 「理論的に正しい」と「ユーザーの目に馴染む」のずれを早期に発見
+- 完了条件: 1つ（または複数の組み合わせ）を確定し、§1「推奨デフォルト」を更新
 
 ### Phase 1: PWA最小機能
 - linear-Y / L\* の切替
@@ -142,12 +149,151 @@ function toValueGray(r8, g8, b8) {
 
 ---
 
-## 5. オープン質問
+## 5. 具体的ユースケースと現案（2026-05-15追記）
 
-1. ホスティング先の好み: Cloudflare Pages / Vercel / GitHub Pages?
-2. ドメイン: 既存所有あり？それともサブパスでOK？
-3. (B)のレイテンシ要件: PWA起動ラグ1〜2秒は許容範囲？それともネイティブ必須？
-4. デザイン/ブランド: 最小限OK？それともこだわる？
+### 即時適用したい3シナリオ
+
+| # | シナリオ | デバイス | 入口 | 既存(A)(B)(C)との対応 |
+|---|---|---|---|---|
+| S1 | Mac上で見つけた「いい感じ」画像 | macOS | Finder / ブラウザ / 画像アプリ | (C) ローカルライブラリ |
+| S2 | Pinterest等のWebで見つけた画像 | Mac/iOS Safari | ブラウザ | (A) ブラウザ内発見 |
+| S3 | 外で歩いていて見つけた風景 | iPhone | カメラ | (B) 実物撮影 |
+
+**要件**: いずれも「見つけた→即適用」のフリクションを最小化。理想は1–2タップ。
+
+### 現案（叩き台）
+- バックエンドにアップロード用APIを立てる
+- Mac/iOS Shortcut から画像を POST → 処理済画像URLを返す → ブラウザで表示
+- メリット: 入口を Shortcut に統一できる
+- 懸念:
+  - サーバー運用コスト（個人ツールで永続稼働は重い）
+  - アップロード往復のレイテンシ（特にS3でモバイル回線時）
+  - 通信できない場所で使えない（外でのS3で致命的）
+  - プライバシー（個人の参照画像をサーバー経由）
+  - 既存の[[Phase 1-3]]提案（PWA + クライアント処理）と矛盾する
+
+### 調査タスク
+代替/補強手段を網羅的に洗い、各シナリオで最短フローを再選定する。
+→ **[§6 アップロード回避型アーキテクチャの再調査](#6-アップロード回避型アーキテクチャの再調査2026-05-15) 参照**
+
+---
+
+## 6. アップロード回避型アーキテクチャの再調査（2026-05-15）
+
+### 結論先出し
+**サーバーアップロード方式は不要**。linear-Y 変換は Canvas で <50 行のクライアント処理で完結する。サーバーを介する利点は「Shortcutに導線を一本化できる」程度で、デメリット（運用コスト、レイテンシ、オフライン不可、プライバシー、回線依存）の方が大きい。
+
+→ **既存の[[Phase案]]（PWA + クライアント処理）を再確認し、各シナリオに合わせて入口を強化する方が筋がよい。**
+
+### アップロード方式の評価（叩き台の検証）
+
+| 観点 | サーバーアップロード | PWA クライアント処理 |
+|---|---|---|
+| 実装 | API + ホスティング + 認証 | 静的ファイルのみ |
+| 月次コスト | サーバー代 | 0円（Cloudflare Pages等） |
+| レイテンシ | 往復＋処理 | 即時（数十ms） |
+| オフライン | × | ◎（PWA cache） |
+| プライバシー | 画像が外部送信 | ローカル完結 |
+| S3外出時(モバイル回線) | △〜× | ◎ |
+| 入口統一 | ◎ Shortcut一本 | △ シナリオごとに最適化 |
+
+→ 唯一のメリット「入口統一」は、シナリオごとに最適入口を用意すれば不要。
+
+### シナリオ別: アップロード回避フロー
+
+#### S1: Mac上で見つけた画像
+1. **ドラッグ&ドロップ** (ブラウザの PWA タブに画像をD&D) — 最速、ゼロ設定
+2. **コピペ** (画像をコピー → PWAで⌘V) — Finder/プレビュー/ブラウザいずれからも
+3. **macOS Quick Action** (Shortcuts.app):
+   - 右クリック→「Quick Actions」→「Open in Valeur」
+   - Shortcutが画像をクリップボードにコピー＋PWAをデフォルトブラウザで起動
+   - PWAは起動時にクリップボードから自動読込（`navigator.clipboard.read()`、ユーザージェスチャ1回必要）
+4. **Safari Web Extension** (将来): 画像右クリック「View in Valeur」で新タブ起動＋画像受渡し（要Apple Developer、優先度低）
+
+#### S2: Pinterest等Web上の画像
+1. **ブックマークレット**: ブックマークバーから1タップ→現在ページの`<img>`を抽出してPWAへ渡す（一行JS、配布不要）
+2. **長押し→「画像をコピー」→PWAで⌘V/ペースト** (Safari標準動作)
+3. **iOS共有シート→Shortcut**:
+   - Pinterest内「共有」→ カスタムShortcut「Open in Valeur」
+   - 注意: Pinterestは「Copy link」だとpinページURLしか取れない。`navigator.share()`経由なら画像URLが取れることがあるがpinに依存
+   - 確実なのは「Save image」でカメラロール保存→PWAのファイル選択でPhotosピッカー
+4. **将来の Safari Web Extension** をiOS/macOS共通で
+
+#### S3: 外で撮った風景
+1. **PWA + getUserMedia**: ホーム画面アイコン1タップ→`?capture=1`でカメラ即起動→撮影→即変換表示
+2. **iOS Action Button** (iPhone 15+):
+   - 設定→Action Button→「Shortcut」→「Valeur起動」Shortcutを割当
+   - 長押し1回でPWA起動、URLパラメータ`?capture=1`でカメラモード直行
+3. **Camera Control button** (iPhone 16+) も同様に割当可
+4. **ロック画面 Control Center カスタムコントロール** (iOS 18+): スワイプ→タップでValeur起動
+
+### 各方式の召喚コスト比較
+
+| シナリオ | サーバー案 | 回避案最短 | 削減タップ |
+|---|---|---|---|
+| S1 (Mac) | Shortcut起動→画像選択→アップロード待ち | ブラウザにD&D | -3 |
+| S2 (Pinterest iOS) | 共有シート→アップロードShortcut→待ち | コピー→ペースト or ブックマークレット | 同等〜-1 |
+| S3 (歩行中) | カメラ→保存→Shortcut→アップロード→結果 | Action Button→撮影→即表示 | -2、かつオフライン可 |
+
+### 重要な技術ポイント (2026-05時点)
+
+1. **iOS Safari の Web Share Target API は依然未対応** ([WebKit #194593](https://bugs.webkit.org/show_bug.cgi?id=194593))。PWAを共有シートのターゲット化は不可。
+2. **Clipboard API**: iOS Safari 13.4+ で `navigator.clipboard.read()` 対応（画像含む）。ユーザージェスチャ必須なのでPWA起動後「Tap to load」を1回押す導線が必要。
+3. **macOS Shortcuts.app** は Quick Action として Finder 右クリック / Services に登録可能。画像受け取り→JS実行→URL起動が標準ブロックで可能。
+4. **iOS Action Button** は Shortcut呼び出しが可能で、結果としてのPWA起動レイテンシは1-2秒。標準Camera比でやや遅いが許容範囲。
+5. **Pinterest からの画像取得**: pin URL ↔ 画像URL は1対1でなく、`originals/`バリアントを取るには pin メタデータ参照が必要。Webブックマークレットなら DOM から直接 `<img src>` を読める。
+6. **iOS Safari Web Extension** は Apple Developer Program ($99/年) 必須。配布障壁が高いので初期は不採用。
+
+### 推奨アーキテクチャ (修正版)
+
+```
+┌─────────────────────────────────────────┐
+│  PWA (静的ホスティング、ゼロサーバー)   │
+│   - linear-Y / L* / posterize           │
+│   - File / Paste / D&D / getUserMedia   │
+│   - ?img= / ?capture= / ?paste=1 受付   │
+└─────────────────────────────────────────┘
+        ↑       ↑          ↑          ↑
+     ↓ S1 ↓   ↓ S2 ↓     ↓ S3 ↓   ↓ 共通 ↓
+   ┌──────┐ ┌────────┐ ┌────────┐ ┌──────┐
+   │ Mac  │ │ ブック │ │ Action │ │ ホーム│
+   │QuickA│ │マークレ│ │Button  │ │画面ｱｲ│
+   │ction │ │ット    │ │+Short  │ │コン  │
+   └──────┘ └────────┘ └────────┘ └──────┘
+```
+
+**個人運用ならホスティングは Cloudflare Pages / GitHub Pages で十分**。HTTPS必須（`getUserMedia`/`clipboard.read`が要求）。
+
+### サーバー案を採用する余地が残るケース
+
+- **複数デバイス間で履歴を共有したい**（Mac で処理 → iPhone でも見たい）
+- **重い処理を将来追加したい**（Color2Gray, decolor 等を WASM ではなく Cloud Function に逃がしたい）
+- **画像をリンクで他人にシェアしたい**
+
+→ いずれも初期MVPでは不要。必要になってから [[Phase 4以降]] で薄いストレージAPIを追加すればよい。
+
+### 次アクション候補
+
+1. **Phase 0 を最速で着手**: 静的HTMLで `?img=URL` 受け linear-Y表示 → ホスティング → 自分のiPhoneで Add to Home Screen
+2. **Mac側 Quick Action** をShortcutsで試作（右クリック→クリップボード経由でPWAへ）
+3. **ブックマークレット** をPinterestで実地テスト
+4. **Action Button割当** で S3 体感レイテンシを測定 → ネイティブ要否を判断
+
+---
+
+## 7. 意思決定ログ
+
+### 確定済 (2026-05-15)
+- [x] **ホスティング**: GitHub Pages
+- [x] **ドメイン**: `trkoh.github.io/check-value-app/` (サブパス)
+- [x] **デザイン**: ミニマル（機能優先）
+- [x] **配信戦略**: アップロード型サーバーは不採用、PWA + クライアント処理 ([§6](#6-アップロード回避型アーキテクチャの再調査2026-05-15))
+- [x] **アルゴリズム検証アプローチ**: Phase 0で5方式を実画像で比較し決定 ([§4 Phase 0](#phase-0-アルゴリズム比較検証))
+
+### 未決
+- [ ] **アルゴリズムのデフォルト**: Phase 0完了時に確定
+- [ ] **(B)シナリオ S3 のレイテンシ**: PWA起動1-2秒が許容範囲か。Phase 1完了後に実機で測定して判断
+- [ ] **ペイントアプリへの送り返しUX**: Phase 3で`navigator.share({files})`の挙動を検証してから決定
 
 ---
 
