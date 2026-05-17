@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ヴァルール変換アルゴリズム比較</title>
+<title>ヴァルール変換</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -14,192 +14,91 @@
     line-height: 1.5;
   }
   h1 { font-size: 1.2rem; margin: 0 0 0.4rem; }
-  h2 { font-size: 1.0rem; margin: 1.5rem 0 0.5rem; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 0.3rem; }
   p.note { font-size: 0.85rem; color: #888; margin: 0 0 1rem; }
   .controls {
     display: flex; flex-wrap: wrap; gap: 0.75rem 1rem;
     padding: 0.75rem; background: #2a2a2a; border-radius: 6px;
-    align-items: center; font-size: 0.9rem;
+    align-items: center; font-size: 0.9rem; margin-bottom: 1rem;
   }
   .controls label { display: inline-flex; align-items: center; gap: 0.4rem; }
-  .controls input[type="file"] { color: #aaa; max-width: 200px; }
+  .controls input[type="file"] { color: #aaa; max-width: 220px; }
   button {
     background: #444; color: #ddd; border: 1px solid #666;
     padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font: inherit;
   }
   button:hover { background: #555; }
   .status { font-size: 0.85rem; color: #888; margin-left: auto; }
-  #source-fig { max-width: 600px; margin: 1rem 0; background: #2a2a2a; padding: 0.75rem; border-radius: 6px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
   figure { margin: 0; background: #2a2a2a; border-radius: 6px; padding: 0.75rem; }
-  figure.highlight { outline: 2px solid #4a9; }
-  figcaption {
-    font-size: 0.9rem; color: #ccc; margin-bottom: 0.5rem;
-    display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;
-  }
-  figcaption .tag { color: #888; font-size: 0.75rem; }
+  figcaption { font-size: 0.9rem; color: #ccc; margin-bottom: 0.5rem; }
   canvas { width: 100%; height: auto; display: block; background: #000; }
-  details.rationale { margin-top: 0.6rem; font-size: 0.8rem; color: #aaa; }
+  details.rationale {
+    margin-top: 1.5rem; font-size: 0.85rem; color: #aaa;
+    background: #232323; padding: 0.6rem 1rem; border-radius: 6px;
+  }
   details.rationale summary { cursor: pointer; color: #88a; user-select: none; padding: 0.2rem 0; }
   details.rationale summary:hover { color: #aac; }
-  details.rationale[open] summary { color: #ccd; }
-  .rationale-body { padding: 0.4rem 0 0.2rem 0.4rem; border-left: 2px solid #444; margin-left: 0.2rem; padding-left: 0.7rem; }
+  details.rationale[open] summary { color: #ccd; margin-bottom: 0.5rem; }
   .rationale-body p { margin: 0.4rem 0; line-height: 1.55; color: #ccc; }
-  .rationale-body .formula-row { font-size: 0.75rem; color: #888; }
+  .rationale-body .formula-row { font-size: 0.78rem; color: #888; }
   .rationale-body .formula-label { color: #666; }
-  .rationale-body .sources-label { font-size: 0.78rem; color: #888; margin-top: 0.8rem; margin-bottom: 0.2rem; }
-  .rationale-body code { background: #1a1a1a; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.88em; word-break: break-word; color: #aaa; }
-  .rationale-body ul { padding-left: 1.2rem; margin: 0.3rem 0; font-size: 0.8rem; }
+  .rationale-body code {
+    background: #1a1a1a; padding: 0.1rem 0.35rem; border-radius: 3px;
+    font-size: 0.88em; word-break: break-word; color: #aaa;
+  }
+  .rationale-body ul { padding-left: 1.2rem; margin: 0.3rem 0; font-size: 0.85rem; }
   .rationale-body a { color: #6af; text-decoration: none; }
   .rationale-body a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 
-<h1>ヴァルール変換アルゴリズム比較</h1>
-<p class="note">
-  <b>入力カラー画像</b> を 5つのアルゴリズムでグレースケール化した結果を並べる。<br>
-  オプションで <b>見本画像</b>（あなたがペイントアプリで作ったグレースケール）を読み込むと、横に並べてどのアルゴリズムが近いか比較できる。見本ナシでも単純にアルゴリズム結果が見られる。
-</p>
+<h1>ヴァルール変換</h1>
+<p class="note">カラー画像を、明暗（ヴァルール）確認用のグレースケールに変換する。</p>
 
 <div class="controls">
-  <label>入力カラー: <input type="file" id="src-input" accept="image/*"></label>
-  <label>見本（任意）: <input type="file" id="truth-input" accept="image/*"></label>
+  <label>入力: <input type="file" id="src-input" accept="image/*"></label>
   <button id="reset">サンプルに戻す</button>
-  <button id="clear-truth">見本を消す</button>
   <span class="status" id="status"></span>
 </div>
 
-<figure id="source-fig">
-  <figcaption><span>入力カラー画像</span><span class="tag" id="src-info"></span></figcaption>
-  <canvas id="canvas-src"></canvas>
-</figure>
+<div class="grid">
+  <figure>
+    <figcaption>入力 (カラー)</figcaption>
+    <canvas id="canvas-src"></canvas>
+  </figure>
+  <figure>
+    <figcaption>出力（ヴァルール確認用）</figcaption>
+    <canvas id="canvas-out"></canvas>
+  </figure>
+</div>
 
-<h2>結果</h2>
-<div class="grid" id="grid"></div>
+<details class="rationale">
+  <summary>変換の詳細・根拠</summary>
+  <div class="rationale-body">
+    <p>ペイントアプリで「白カラーレイヤーを最上位に重ねる」と出るのと概ね同じ計算で、色を抜いて明暗の組み立てだけを残す。</p>
+    <p class="formula-row"><span class="formula-label">計算式:</span> <code>0.2126·R + 0.7152·G + 0.0722·B</code></p>
+    <p>係数 0.2126 / 0.7152 / 0.0722 は ITU-R BT.709 (HDTV/sRGBの輝度標準) で定められた赤・緑・青の重み。緑が最も明るく、青が最も暗く感じるという人間の目の特性に基づく。</p>
+    <p>参考リンク:</p>
+    <ul>
+      <li><a href="https://www.itu.int/rec/R-REC-BT.709/" target="_blank" rel="noopener noreferrer">ITU-R BT.709 (係数の出典)</a></li>
+      <li><a href="https://www.w3.org/Graphics/Color/sRGB.html" target="_blank" rel="noopener noreferrer">W3C sRGB 仕様</a></li>
+      <li><a href="https://poynton.ca/notes/colour_and_gamma/" target="_blank" rel="noopener noreferrer">Poynton "Color FAQ" — 色とガンマの解説</a></li>
+    </ul>
+  </div>
+</details>
 
 <script>
 (() => {
   const PROC_MAX = 1024;
-  const DEFAULTS = {
-    source: 'samples/color_paint.png',
-    truth: 'samples/mono_paint.png',
-  };
+  const DEFAULT_SOURCE = 'samples/JoaquinSorolla.jpg';
 
-  // ---- 色変換 ----
-  function srgbToLinear(c8) {
-    const x = c8 / 255;
-    return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
-  }
-  function linearToSrgb(c) {
-    const x = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1/2.4) - 0.055;
-    return Math.max(0, Math.min(255, Math.round(x * 255)));
+  function toGray(r, g, b) {
+    return Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
   }
 
-  // ---- アルゴリズム ----
-  const ALGOS = [
-    {
-      key: 'hsl',
-      label: 'HSL均し',
-      tag: '悪い例 / 使ってはダメ',
-      fn: (r, g, b) => {
-        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-        return Math.round((mx + mn) / 2);
-      },
-      rationale: '純黄も純青も純赤も全部 50% グレーになる雑な計算。色がもつ明暗の違いを完全に潰すので、ヴァルール確認にも Notan にも使えない。並べているのは「これが間違いの典型」と分かるため。多くの簡易ツールがデフォルトでコレを使っているので注意。',
-      formula: '(max(R,G,B) + min(R,G,B)) / 2',
-      sources: [
-        { label: 'HSL and HSV — Wikipedia', url: 'https://en.wikipedia.org/wiki/HSL_and_HSV' },
-      ],
-    },
-    {
-      key: 'rec709',
-      label: 'Photoshop 互換 (日常のヴァルール用)',
-      tag: '★ PWAの基本表示',
-      fn: (r, g, b) => Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b),
-      rationale: 'ペイントアプリで「白カラーレイヤーを最上位に重ねる」と出る結果と概ね同じ計算。あなたが普段やってるヴァルール確認の方式そのまま。PWA本体でも普段使いの基本表示としてこれを採用する予定。日常的な「明暗の組み立てを確認したい」用途はこれで十分。',
-      formula: '0.2126·R + 0.7152·G + 0.0722·B  (sRGB値そのまま)',
-      sources: [
-        { label: 'ITU-R BT.709 (HDTVの輝度標準、上の係数の出典)', url: 'https://www.itu.int/rec/R-REC-BT.709/' },
-        { label: 'W3C sRGB 仕様', url: 'https://www.w3.org/Graphics/Color/sRGB.html' },
-        { label: 'Poynton "Color FAQ" — 色とガンマの権威解説', url: 'https://poynton.ca/notes/colour_and_gamma/' },
-      ],
-    },
-    {
-      key: 'linear',
-      label: '物理光量 (参考用)',
-      tag: '画家用途では補助的',
-      fn: (r, g, b) => {
-        const Y = 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
-        return linearToSrgb(Y);
-      },
-      rationale: '「実際に目に届いている光が物理的に何倍明るいか」をそのまま反映する方式。屋外の太陽光下で実物の輝度差を測ったような結果になる。ただし純黄が眩しすぎる白に出るなど、人の目で見た「明るさの感覚」とはズレる。ヴァルール判定の主軸には不向き。「自然光下の実物の光量配分を参考にしたい」など特殊用途のみ。PWA本体には載せない方針。',
-      formula: 'sRGB → 線形空間 → 0.2126·R + 0.7152·G + 0.0722·B → sRGBに戻す',
-      sources: [
-        { label: 'Poynton "Color FAQ" — リニア vs ガンマの解説', url: 'https://poynton.ca/notes/colour_and_gamma/' },
-        { label: 'Bruce Lindbloom — 色空間変換の計算式集', url: 'http://www.brucelindbloom.com/index.html?ColorCalculator.html' },
-      ],
-    },
-    {
-      key: 'lstar',
-      label: '知覚均等 (Notan・段階分け用)',
-      tag: '★ posterize 専用',
-      fn: (r, g, b) => {
-        const Y = 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
-        const e = 216/24389, k = 24389/27;
-        const L = Y > e ? 116 * Math.pow(Y, 1/3) - 16 : k * Y;
-        return Math.max(0, Math.min(255, Math.round(L * 255 / 100)));
-      },
-      rationale: '人の目が感じる「明るさの差」と数値の差が一致するように作られた方式。これを使って明暗を 2/3/5/9 段階に区切ると、見た目にも均等な段階分けになる。Notan（濃淡構成の単純化）や、明度を数段階に減らした構図確認に最適。画家用の明度尺度として古くから使われる Munsell Value 体系の数値版に近い。PWAでは posterize 機能の内部でコレに切替予定（ユーザーが意識する必要はなく、5段階分け等を選ぶと自動で適用）。',
-      formula: 'Y(linear) を立方根変換 → L* = 116·∛Y − 16  (CIE 1976)',
-      sources: [
-        { label: 'Munsell Color System — 画家用明度尺度の元祖', url: 'https://munsell.com/about-munsell-color/how-color-notation-works/' },
-        { label: 'CIELAB — Wikipedia', url: 'https://en.wikipedia.org/wiki/CIELAB_color_space' },
-        { label: 'CIE 15 Colorimetry (国際照明委員会の正規格)', url: 'https://cie.co.at/publications/colorimetry-4th-edition' },
-      ],
-    },
-  ];
-
-  // ---- DOM ----
-  const grid = document.getElementById('grid');
   const status = document.getElementById('status');
-  const srcInfo = document.getElementById('src-info');
 
-  function rationaleHTML(algo) {
-    if (!algo) return '';
-    const sources = algo.sources.map(s =>
-      `<li><a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.label}</a></li>`
-    ).join('');
-    return `
-      <details class="rationale">
-        <summary>詳細・根拠</summary>
-        <div class="rationale-body">
-          <p>${algo.rationale}</p>
-          <p class="formula-row"><span class="formula-label">計算式（参考）:</span> <code>${algo.formula}</code></p>
-          <p class="sources-label">参考リンク（一次資料・標準規格）:</p>
-          <ul>${sources}</ul>
-        </div>
-      </details>
-    `;
-  }
-
-  function makeFigure(id, label, tag = '', highlight = false, algo = null) {
-    const fig = document.createElement('figure');
-    fig.id = `fig-${id}`;
-    if (highlight) fig.classList.add('highlight');
-    fig.innerHTML = `
-      <figcaption><span>${label}</span>${tag ? `<span class="tag">${tag}</span>` : ''}</figcaption>
-      <canvas id="canvas-${id}"></canvas>
-      ${rationaleHTML(algo)}
-    `;
-    grid.appendChild(fig);
-    return fig;
-  }
-
-  const truthFig = makeFigure('truth', '見本 (Ground Truth)', 'あなたの正解画像', true);
-  ALGOS.forEach(a => makeFigure(a.key, a.label, a.tag, false, a));
-
-  // ---- 画像処理 ----
   function loadImage(src) {
     return new Promise((res, rej) => {
       const img = new Image();
@@ -224,86 +123,55 @@
     return ctx.getImageData(0, 0, w, h);
   }
 
-  function applyAlgo(srcData, fn, canvas) {
+  function convertToCanvas(srcData, canvas) {
     canvas.width = srcData.width;
     canvas.height = srcData.height;
     const ctx = canvas.getContext('2d');
     const out = ctx.createImageData(srcData.width, srcData.height);
     const sd = srcData.data, od = out.data;
     for (let i = 0; i < sd.length; i += 4) {
-      const v = fn(sd[i], sd[i+1], sd[i+2]);
+      const v = toGray(sd[i], sd[i+1], sd[i+2]);
       od[i] = od[i+1] = od[i+2] = v;
       od[i+3] = sd[i+3];
     }
     ctx.putImageData(out, 0, 0);
   }
 
-  async function loadAndProcess({ sourceSrc, truthSrc }) {
+  async function loadAndProcess(sourceSrc) {
     status.textContent = '読込中…';
     try {
       const srcImg = await loadImage(sourceSrc);
       const srcCanvas = document.getElementById('canvas-src');
       const srcData = drawImage(srcImg, srcCanvas);
-      srcInfo.textContent = `${srcImg.naturalWidth}×${srcImg.naturalHeight} → ${srcCanvas.width}×${srcCanvas.height} で処理`;
-
-      if (truthSrc) {
-        try {
-          const truthImg = await loadImage(truthSrc);
-          drawImage(truthImg, document.getElementById('canvas-truth'));
-          truthFig.style.display = '';
-        } catch (e) {
-          truthFig.style.display = 'none';
-          console.warn('truth load failed:', e);
-        }
-      } else {
-        truthFig.style.display = 'none';
-      }
-
       status.textContent = '処理中…';
-      for (const algo of ALGOS) {
-        await new Promise(r => requestAnimationFrame(r));
-        applyAlgo(srcData, algo.fn, document.getElementById(`canvas-${algo.key}`));
-      }
-
-      status.textContent = '完了';
+      await new Promise(r => requestAnimationFrame(r));
+      convertToCanvas(srcData, document.getElementById('canvas-out'));
+      status.textContent = `完了 (${srcCanvas.width}×${srcCanvas.height}px)`;
     } catch (e) {
       status.textContent = `エラー: ${e.message}`;
       console.error(e);
     }
   }
 
-  // ---- 初期化 ----
-  let state = { ...DEFAULTS };
-
-  function reload() {
-    loadAndProcess({ sourceSrc: state.source, truthSrc: state.truth });
-  }
+  let currentSource = DEFAULT_SOURCE;
 
   const params = new URLSearchParams(location.search);
-  if (params.has('source')) state.source = params.get('source');
-  if (params.has('truth')) state.truth = params.get('truth') || null;
+  if (params.has('source')) currentSource = params.get('source');
 
   document.getElementById('src-input').addEventListener('change', (e) => {
     const f = e.target.files[0];
-    if (f) { state.source = URL.createObjectURL(f); reload(); }
-  });
-  document.getElementById('truth-input').addEventListener('change', (e) => {
-    const f = e.target.files[0];
-    if (f) { state.truth = URL.createObjectURL(f); reload(); }
+    if (f) {
+      currentSource = URL.createObjectURL(f);
+      loadAndProcess(currentSource);
+    }
   });
   document.getElementById('reset').addEventListener('click', () => {
-    state = { ...DEFAULTS };
+    currentSource = DEFAULT_SOURCE;
     document.getElementById('src-input').value = '';
-    document.getElementById('truth-input').value = '';
-    reload();
-  });
-  document.getElementById('clear-truth').addEventListener('click', () => {
-    state.truth = null;
-    document.getElementById('truth-input').value = '';
-    reload();
+    loadAndProcess(currentSource);
   });
 
-  reload();
+  loadAndProcess(currentSource);
 })();
 </script>
 
