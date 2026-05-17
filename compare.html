@@ -45,23 +45,24 @@
 
 <h1>ヴァルール変換アルゴリズム比較</h1>
 <p class="note">
-  Phase 0 検証ツール。Source (カラー) と Ground Truth (ペイントアプリ出力) を読み込み、
-  5つのアルゴリズムでグレースケール化した結果を並べる。どれが Ground Truth に最も近いかを目視判定する。
+  <b>入力カラー画像</b> を 5つのアルゴリズムでグレースケール化した結果を並べる。<br>
+  オプションで <b>見本画像</b>（あなたがペイントアプリで作ったグレースケール）を読み込むと、横に並べてどのアルゴリズムが近いか比較できる。見本ナシでも単純にアルゴリズム結果が見られる。
 </p>
 
 <div class="controls">
-  <label>Source: <input type="file" id="src-input" accept="image/*"></label>
-  <label>Ground Truth: <input type="file" id="truth-input" accept="image/*"></label>
+  <label>入力カラー: <input type="file" id="src-input" accept="image/*"></label>
+  <label>見本（任意）: <input type="file" id="truth-input" accept="image/*"></label>
   <button id="reset">サンプルに戻す</button>
+  <button id="clear-truth">見本を消す</button>
   <span class="status" id="status"></span>
 </div>
 
 <figure id="source-fig">
-  <figcaption><span>Source (input)</span><span class="tag" id="src-info"></span></figcaption>
+  <figcaption><span>入力カラー画像</span><span class="tag" id="src-info"></span></figcaption>
   <canvas id="canvas-src"></canvas>
 </figure>
 
-<h2>結果比較 (Ground Truth + 5 アルゴリズム)</h2>
+<h2>結果</h2>
 <div class="grid" id="grid"></div>
 
 <script>
@@ -134,15 +135,17 @@
 
   function makeFigure(id, label, tag = '', highlight = false) {
     const fig = document.createElement('figure');
+    fig.id = `fig-${id}`;
     if (highlight) fig.classList.add('highlight');
     fig.innerHTML = `
       <figcaption><span>${label}</span>${tag ? `<span class="tag">${tag}</span>` : ''}</figcaption>
       <canvas id="canvas-${id}"></canvas>
     `;
     grid.appendChild(fig);
+    return fig;
   }
 
-  makeFigure('truth', 'Ground Truth', 'ペイントアプリ', true);
+  const truthFig = makeFigure('truth', '見本 (Ground Truth)', 'あなたの正解画像', true);
   ALGOS.forEach(a => makeFigure(a.key, a.label, a.tag));
 
   // ---- 画像処理 ----
@@ -187,16 +190,23 @@
   async function loadAndProcess({ sourceSrc, truthSrc }) {
     status.textContent = '読込中…';
     try {
-      const [srcImg, truthImg] = await Promise.all([
-        loadImage(sourceSrc),
-        loadImage(truthSrc),
-      ]);
-
+      const srcImg = await loadImage(sourceSrc);
       const srcCanvas = document.getElementById('canvas-src');
-      const truthCanvas = document.getElementById('canvas-truth');
       const srcData = drawImage(srcImg, srcCanvas);
-      drawImage(truthImg, truthCanvas);
       srcInfo.textContent = `${srcImg.naturalWidth}×${srcImg.naturalHeight} → ${srcCanvas.width}×${srcCanvas.height} で処理`;
+
+      if (truthSrc) {
+        try {
+          const truthImg = await loadImage(truthSrc);
+          drawImage(truthImg, document.getElementById('canvas-truth'));
+          truthFig.style.display = '';
+        } catch (e) {
+          truthFig.style.display = 'none';
+          console.warn('truth load failed:', e);
+        }
+      } else {
+        truthFig.style.display = 'none';
+      }
 
       status.textContent = '処理中…';
       for (const algo of ALGOS) {
@@ -220,7 +230,7 @@
 
   const params = new URLSearchParams(location.search);
   if (params.has('source')) state.source = params.get('source');
-  if (params.has('truth')) state.truth = params.get('truth');
+  if (params.has('truth')) state.truth = params.get('truth') || null;
 
   document.getElementById('src-input').addEventListener('change', (e) => {
     const f = e.target.files[0];
@@ -233,6 +243,11 @@
   document.getElementById('reset').addEventListener('click', () => {
     state = { ...DEFAULTS };
     document.getElementById('src-input').value = '';
+    document.getElementById('truth-input').value = '';
+    reload();
+  });
+  document.getElementById('clear-truth').addEventListener('click', () => {
+    state.truth = null;
     document.getElementById('truth-input').value = '';
     reload();
   });
