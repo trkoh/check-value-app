@@ -39,6 +39,16 @@
   }
   figcaption .tag { color: #888; font-size: 0.75rem; }
   canvas { width: 100%; height: auto; display: block; background: #000; }
+  details.rationale { margin-top: 0.6rem; font-size: 0.8rem; color: #aaa; }
+  details.rationale summary { cursor: pointer; color: #88a; user-select: none; padding: 0.2rem 0; }
+  details.rationale summary:hover { color: #aac; }
+  details.rationale[open] summary { color: #ccd; }
+  .rationale-body { padding: 0.4rem 0 0.2rem 0.4rem; border-left: 2px solid #444; margin-left: 0.2rem; padding-left: 0.7rem; }
+  .rationale-body p { margin: 0.3rem 0; line-height: 1.5; }
+  .rationale-body code { background: #1a1a1a; padding: 0.1rem 0.35rem; border-radius: 3px; font-size: 0.88em; word-break: break-word; }
+  .rationale-body ul { padding-left: 1.2rem; margin: 0.3rem 0; }
+  .rationale-body a { color: #6af; text-decoration: none; }
+  .rationale-body a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -93,27 +103,51 @@
         const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
         return Math.round((mx + mn) / 2);
       },
+      formula: '(max(R,G,B) + min(R,G,B)) / 2',
+      rationale: 'HSL色空間のLightness成分。色相による明度の違いを無視するため、純黄と純青が同じグレーになる。多くの簡易ツールがデフォルト採用しているが、ヴァルール判定には不適。',
+      sources: [
+        { label: 'HSL and HSV — Wikipedia', url: 'https://en.wikipedia.org/wiki/HSL_and_HSV' },
+      ],
     },
     {
       key: 'rec601',
       label: "(b) Rec.601 Y' (gamma)",
       tag: '旧TV標準',
       fn: (r, g, b) => Math.round(0.299 * r + 0.587 * g + 0.114 * b),
+      formula: "0.299·R' + 0.587·G' + 0.114·B'   (R'G'B' = ガンマ補正済み sRGB値)",
+      rationale: 'ITU-R BT.601 (1982年制定、NTSC/PAL系デジタルTV標準) の輝度係数。緑への重みが Rec.709 より若干小さい。旧式コーデックや一部の古い画像処理ライブラリで使われる。',
+      sources: [
+        { label: 'ITU-R BT.601 Recommendation', url: 'https://www.itu.int/rec/R-REC-BT.601/' },
+      ],
     },
     {
       key: 'rec709',
       label: "(c) Rec.709 Y' (gamma)",
       tag: 'Photoshop "Color" 推定',
       fn: (r, g, b) => Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b),
+      formula: "0.2126·R' + 0.7152·G' + 0.0722·B'   (R'G'B' = ガンマ補正済み sRGB値)",
+      rationale: 'ITU-R BT.709 (HDTV/sRGB標準) の輝度係数を、ガンマ補正済みのsRGB値に直接適用する方式。数学的には厳密な「線形輝度」ではないが、Photoshop の "Color" ブレンドなど多くのアプリのデフォルト挙動と一致するため、画家ワークフロー互換に最適。',
+      sources: [
+        { label: 'ITU-R BT.709 Recommendation', url: 'https://www.itu.int/rec/R-REC-BT.709/' },
+        { label: 'W3C sRGB Specification', url: 'https://www.w3.org/Graphics/Color/sRGB.html' },
+        { label: 'Poynton "Color FAQ"', url: 'https://poynton.ca/notes/colour_and_gamma/' },
+      ],
     },
     {
       key: 'linear',
       label: '(d) Linear-Y → sRGB',
-      tag: '現推奨',
+      tag: '物理的に正確',
       fn: (r, g, b) => {
         const Y = 0.2126 * srgbToLinear(r) + 0.7152 * srgbToLinear(g) + 0.0722 * srgbToLinear(b);
         return linearToSrgb(Y);
       },
+      formula: 'sRGB → linear → 0.2126·R + 0.7152·G + 0.0722·B → sRGB',
+      rationale: 'sRGB のガンマ補正を解いてから輝度を計算する物理的に正確な方法。光子数に比例するため、ライティング計算・物理シミュレーション・適切なダウンサンプリング等には正しい。ただし人の明るさ感覚とは合わず、純黄が眩しい白として出る。',
+      sources: [
+        { label: 'IEC 61966-2-1 sRGB Profile', url: 'https://www.color.org/chardata/rgb/sRGB.pdf' },
+        { label: 'Poynton "Color FAQ"', url: 'https://poynton.ca/notes/colour_and_gamma/' },
+        { label: 'Bruce Lindbloom — Color Math', url: 'http://www.brucelindbloom.com/index.html?ColorCalculator.html' },
+      ],
     },
     {
       key: 'lstar',
@@ -125,6 +159,14 @@
         const L = Y > e ? 116 * Math.pow(Y, 1/3) - 16 : k * Y;
         return Math.max(0, Math.min(255, Math.round(L * 255 / 100)));
       },
+      formula: 'Y(linear) → L* = 116·f(Y) − 16,    f(t) = t^(1/3) if t > 0.008856 else 7.787t + 16/116',
+      rationale: 'CIE 1976 で定義された知覚均等明度。同じ L* 差は人にとって同じ明るさ差として感じられる。Munsell Value 体系（画家用明度尺度）に近く、ポスタリゼーション/Notanで明暗段階を等間隔に分けるのに最適。Adobe Photoshop の "Labカラー" モードや ICC プロファイルでも採用。',
+      sources: [
+        { label: 'CIE 15:2018 Colorimetry', url: 'https://cie.co.at/publications/colorimetry-4th-edition' },
+        { label: 'CIELAB color space — Wikipedia', url: 'https://en.wikipedia.org/wiki/CIELAB_color_space' },
+        { label: 'Munsell Color System', url: 'https://munsell.com/about-munsell-color/how-color-notation-works/' },
+        { label: 'OKLab (現代的後継、参考)', url: 'https://bottosson.github.io/posts/oklab/' },
+      ],
     },
   ];
 
@@ -133,20 +175,39 @@
   const status = document.getElementById('status');
   const srcInfo = document.getElementById('src-info');
 
-  function makeFigure(id, label, tag = '', highlight = false) {
+  function rationaleHTML(algo) {
+    if (!algo) return '';
+    const sources = algo.sources.map(s =>
+      `<li><a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.label}</a></li>`
+    ).join('');
+    return `
+      <details class="rationale">
+        <summary>詳細・根拠</summary>
+        <div class="rationale-body">
+          <p><b>式:</b> <code>${algo.formula}</code></p>
+          <p>${algo.rationale}</p>
+          <p><b>参考:</b></p>
+          <ul>${sources}</ul>
+        </div>
+      </details>
+    `;
+  }
+
+  function makeFigure(id, label, tag = '', highlight = false, algo = null) {
     const fig = document.createElement('figure');
     fig.id = `fig-${id}`;
     if (highlight) fig.classList.add('highlight');
     fig.innerHTML = `
       <figcaption><span>${label}</span>${tag ? `<span class="tag">${tag}</span>` : ''}</figcaption>
       <canvas id="canvas-${id}"></canvas>
+      ${rationaleHTML(algo)}
     `;
     grid.appendChild(fig);
     return fig;
   }
 
   const truthFig = makeFigure('truth', '見本 (Ground Truth)', 'あなたの正解画像', true);
-  ALGOS.forEach(a => makeFigure(a.key, a.label, a.tag));
+  ALGOS.forEach(a => makeFigure(a.key, a.label, a.tag, false, a));
 
   // ---- 画像処理 ----
   function loadImage(src) {
