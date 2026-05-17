@@ -3,7 +3,9 @@
 画家のための「ヴァルール（明暗の組み立て）確認」用ウェブツール。
 カラー画像を1タップでグレースケール化し、構図の明暗を即座に確認できる。
 
-**▶ 使う: https://odayakalife.dev/check-value-app/compare.html**
+**▶ 使う: https://odayakalife.dev/check-value-app/**
+
+（旧URL `compare.html` も従来通り使える）
 
 ---
 
@@ -30,57 +32,82 @@
 
 ## できること
 
-### 現状
+### 実装済み機能
 - カラー画像を、ペイントアプリの「白カラーレイヤー + Color ブレンド」と同等のグレースケールに変換
-- ファイル選択 / デフォルトサンプル表示
+- 入力多様化:
+  - ファイル選択
+  - ドラッグ&ドロップ
+  - クリップボード貼り付け（ボタン / Cmd・Ctrl+V）
+  - `getUserMedia` カメラ直結（背面カメラ優先、撮影→即変換）
+  - URLパラメータ: `?img=URL` `?paste=1` `?capture=1`
+- アルゴリズム切替: **BT.709 Y'**（デフォルト, Photoshop互換）/ **CIE L\***（知覚均等）
+- 段階化: 連続グレー / **Posterize 2・3・4・5・6・9・16段** / **Notan 2値・3値**
+- **Squint mode**: Gaussian blur で「目を細めた構図」を再現（0–32px）
+- **共有 / 保存**: `navigator.share({files})` で処理済み画像をペイントアプリに直接送信、非対応環境では PNG ダウンロード
+- **色を逆引き (Reverse value picker)**: 出力画像をクリック → そのグレー値（Oklab L）に合う色候補12色を表示、HEXコピー
+- PWA化: ホーム画面追加対応、Service Workerでオフライン動作
 - 計算式の根拠を画面上で確認可能（折りたたみ式の参考リンク付き）
 
-### 計画中（[Issue一覧](https://github.com/trkoh/check-value-app/issues)参照）
-- PWA化（ホーム画面追加、オフライン動作）
-- 入力多様化: ドラッグ&ドロップ / クリップボード貼り付け / `getUserMedia` でカメラ直結
-- 配信導線:
-  - macOS Quick Action（Finder右クリックから起動）
-  - iOS Shortcut / Action Button（外で1タップ撮影→即確認）
-  - ブックマークレット（Pinterest 等のページから1タップ）
-- 明暗段階化（Notan / 2・3・5・9段階posterize）
-- ペイントアプリへの送り返し（`navigator.share`）
+### 配信導線（外部から1〜2タップで起動）
+詳細手順は [DELIVERY.md](./DELIVERY.md) 参照:
+- **S1 Mac画像**: macOS Quick Action（Finder右クリック → クリップボードへコピー → `?paste=1` で起動）
+- **S2 Web**: ブックマークレット（ページ最大の `<img>` を `?img=` で渡す）
+- **S3 屋外**: iOS Shortcut + Action Button（`?capture=1` でカメラ直結）
+
+### 計画中
+- iOS Shortcut の iCloud リンク配布
+- Color2Gray（OpenCV.js, "情報重視" モード）
+- SwiftUI ネイティブラッパー（必要性確認後）
 
 ## 使い方
 
 ### 即試す
-1. https://odayakalife.dev/check-value-app/compare.html を開く
+1. https://odayakalife.dev/check-value-app/ を開く
 2. デフォルトでサンプル画像（Joaquín Sorolla, public domain）の変換結果が表示される
-3. 「入力」のファイル選択で任意の画像を読み込めば即座に変換
+3. ファイル選択 / ペースト / ドラッグ&ドロップ / カメラ のいずれかで任意の画像を投入
+
+### iPhoneでホーム画面に追加
+1. Safariで開く → 共有ボタン → "ホーム画面に追加"
+2. ホーム画面のアイコンから起動するとフルスクリーンで動作（Service Workerによりオフラインでも起動可）
 
 ### URLパラメータ
-- `?source=URL` で任意の画像URLをデフォルト入力にできる
-  - 例: `?source=samples/photoshop.PNG`
+| パラメータ | 動作 |
+|---|---|
+| `?img=URL` | 任意の画像URLを入力に（外部URLはCORS必要） |
+| `?source=URL` | 旧パラメータ（同origin推奨、後方互換） |
+| `?capture=1` | 起動と同時にカメラを開く |
+| `?paste=1` | 起動時にペースト待機メッセージを表示 |
 
 ## 技術スタック
 
 - **フロントエンド**: 素のHTML / CSS / JavaScript（フレームワーク不使用）
 - **画像処理**: Canvas 2D API でクライアントサイド完結
-- **アルゴリズム**: ITU-R BT.709 輝度係数 `Y = 0.2126R + 0.7152G + 0.0722B`
+- **アルゴリズム**: ITU-R BT.709 Y' `Y' = 0.2126R + 0.7152G + 0.0722B` (デフォルト) / CIE L\* (切替可)
+- **PWA**: manifest.webmanifest + Service Worker（stale-while-revalidate）
 - **ホスティング**: GitHub Pages（カスタムドメイン `odayakalife.dev` 配下）
 - **開発環境**: VSCode + Claude Code（devcontainer / Docker）
 
 ### 設計上の特徴
 - **サーバー無し**: すべてクライアントサイド処理。画像は外部送信されない
 - **プライバシー**: 個人の参照画像が外部サーバーを通らない
-- **オフライン対応予定**: PWA化により回線なしでも動作（Phase 1）
+- **オフライン動作**: PWAインストール後は回線なしでも起動・処理可能
 
 ## アルゴリズム選定の経緯
 
-[RESEARCH.md §1](./RESEARCH.md#1-アルゴリズム) で 5 方式（HSL desat / Rec.601 Y' / Rec.709 Y' / Linear-Y / L\*）を比較検証した結果、画家ワークフローとの互換性を最重視して BT.709 (Rec.709 Y') を採用。
-将来 posterize / Notan 機能を追加する際は、内部的に CIE L\* に切替予定（知覚均等性のため）。
+5 方式（HSL desat / Rec.601 Y' / Rec.709 Y' / Linear-Y / L\*）を比較検証した結果、画家ワークフローとの互換性を最重視して BT.709 (Rec.709 Y') を採用（[RESEARCH.md](./RESEARCH.md) は古い、要更新）。Posterize / Notan / Reverse picker は内部的に CIE L\* / Oklab を使用。
 
 ## プロジェクト構成
 
 | パス | 内容 |
 |---|---|
-| `compare.html` | 単一エントリーポイント。入力→ヴァルール出力 |
+| `index.html` | メインエントリ（PWA / 全機能） |
+| `compare.html` | 旧シンプル版（後方互換用に保持） |
+| `manifest.webmanifest` | PWA マニフェスト |
+| `sw.js` | Service Worker（オフラインキャッシュ） |
+| `icons/` | PWA / apple-touch アイコン |
 | `samples/` | テスト・デフォルト用画像 |
-| `RESEARCH.md` | アルゴリズム / 競合 / 配信機構の調査ログ |
+| `DELIVERY.md` | 配信導線（ブックマークレット / iOS Shortcut / Mac Quick Action）手順 |
+| `RESEARCH.md` | アルゴリズム / 競合 / 配信機構の調査ログ（古い、要更新） |
 | `.devcontainer/` | 開発環境定義（Docker, firewall, Claude Code 設定） |
 
 ## 進捗
@@ -89,9 +116,12 @@ GitHub Issues で管理:
 
 - 🎯 [#5 プロジェクトトラッキング](https://github.com/trkoh/check-value-app/issues/5)
 - ✅ [#1 Phase 0: アルゴリズム比較検証](https://github.com/trkoh/check-value-app/issues/1) — BT.709 採用決定
-- ⏳ [#2 Phase 1: PWA最小機能](https://github.com/trkoh/check-value-app/issues/2)
-- ⏳ [#3 Phase 2: 配信導線](https://github.com/trkoh/check-value-app/issues/3)
-- ⏳ [#4 Phase 3: 差別化機能](https://github.com/trkoh/check-value-app/issues/4)
+- ✅ [#2 Phase 1: PWA最小機能](https://github.com/trkoh/check-value-app/issues/2) — 実装済み（iPhone 実機検証は別途）
+- ✅ [#3 Phase 2: 配信導線](https://github.com/trkoh/check-value-app/issues/3) — ブックマークレット / 手順書（[DELIVERY.md](./DELIVERY.md)）
+- ✅ [#4 Phase 3: 差別化機能](https://github.com/trkoh/check-value-app/issues/4) — Share / Squint 実装（Color2Gray・SwiftUI は将来）
+- ✅ [#7 Reverse value picker](https://github.com/trkoh/check-value-app/issues/7) — Oklab パレットで実装
+- ⏸ [#6 サンプル画像コミット](https://github.com/trkoh/check-value-app/issues/6) — Procreate ground truth が手元になく保留
+- ⏸ [#8 RESEARCH 統合](https://github.com/trkoh/check-value-app/issues/8) — RESEARCH.md 自体が古く保留
 
 ## ライセンス
 

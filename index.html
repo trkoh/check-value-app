@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1a1a1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Value">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>ヴァルール変換</title>
+<style>
+  :root { color-scheme: dark; --bg: #1a1a1a; --panel: #2a2a2a; --panel2: #232323; --text: #ddd; --muted: #888; --accent: #6af; --line: #3a3a3a; }
+  * { box-sizing: border-box; }
+  html, body { background: var(--bg); }
+  body {
+    margin: 0; padding: 1rem;
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.2rem; margin: 0 0 0.4rem; }
+  p.note { font-size: 0.85rem; color: var(--muted); margin: 0 0 1rem; }
+
+  .panel {
+    background: var(--panel); border-radius: 6px;
+    padding: 0.75rem; margin-bottom: 0.75rem;
+    font-size: 0.9rem;
+  }
+  .panel h2 {
+    font-size: 0.8rem; font-weight: 600; color: var(--muted);
+    margin: 0 0 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; }
+  .row + .row { margin-top: 0.5rem; }
+
+  button, .file-label {
+    background: #3a3a3a; color: var(--text); border: 1px solid #555;
+    padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font: inherit;
+    display: inline-flex; align-items: center; gap: 0.35rem;
+  }
+  button:hover, .file-label:hover { background: #484848; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: #356; border-color: #588; }
+  button.primary:hover { background: #467; }
+  button.toggle-on { background: #356; border-color: #588; color: #fff; }
+  input[type="file"] { display: none; }
+
+  .seg {
+    display: inline-flex; border: 1px solid #555; border-radius: 4px; overflow: hidden;
+  }
+  .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  .seg label {
+    padding: 0.35rem 0.7rem; cursor: pointer; background: #2a2a2a; color: #bbb;
+    border-right: 1px solid #555; font-size: 0.85rem; user-select: none;
+  }
+  .seg label:last-child { border-right: none; }
+  .seg input:checked + label { background: #356; color: #fff; }
+
+  select {
+    background: #3a3a3a; color: var(--text); border: 1px solid #555;
+    padding: 0.35rem 0.5rem; border-radius: 4px; font: inherit;
+  }
+  select:disabled { opacity: 0.4; }
+
+  input[type="range"] { vertical-align: middle; }
+
+  .control-label { color: var(--muted); font-size: 0.8rem; min-width: 5.5rem; }
+
+  .status { font-size: 0.85rem; color: var(--muted); margin-left: auto; }
+  .status.err { color: #f88; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.75rem; }
+  figure { margin: 0; background: var(--panel); border-radius: 6px; padding: 0.6rem; }
+  figcaption { font-size: 0.85rem; color: #ccc; margin-bottom: 0.4rem; }
+  canvas { width: 100%; height: auto; display: block; background: #000; border-radius: 3px; }
+  canvas.pickable { cursor: crosshair; }
+
+  .drop-overlay {
+    position: fixed; inset: 0; background: rgba(50, 90, 130, 0.35);
+    border: 3px dashed #6af; pointer-events: none;
+    display: none; z-index: 1000;
+    align-items: center; justify-content: center;
+    font-size: 1.5rem; color: #fff; font-weight: 600;
+  }
+  body.drag-over .drop-overlay { display: flex; }
+
+  .camera-modal {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    z-index: 1100; display: none;
+    flex-direction: column; align-items: center; justify-content: center;
+    padding: 1rem; padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  .camera-modal.open { display: flex; }
+  .camera-modal video {
+    max-width: 100%; max-height: 70vh; background: #000;
+    border-radius: 4px;
+  }
+  .camera-modal .controls { margin-top: 1rem; display: flex; gap: 0.75rem; }
+  .camera-modal .controls button { padding: 0.6rem 1.2rem; }
+
+  .palette-panel { margin-top: 0.6rem; }
+  .palette-info {
+    font-size: 0.85rem; color: #ccc; margin-bottom: 0.4rem;
+    display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center;
+  }
+  .palette-info code { background: #1a1a1a; padding: 0.05rem 0.3rem; border-radius: 3px; }
+  .palette-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: 0.4rem;
+  }
+  .swatch {
+    aspect-ratio: 1 / 1; border-radius: 4px; cursor: pointer;
+    border: 1px solid #444; position: relative;
+    display: flex; align-items: flex-end; justify-content: center;
+    overflow: hidden;
+  }
+  .swatch .hex {
+    font-size: 0.65rem; color: #fff; background: rgba(0,0,0,0.55);
+    width: 100%; text-align: center; padding: 0.1rem 0; font-family: monospace;
+  }
+  .swatch.copied::after {
+    content: 'コピー'; position: absolute; inset: 0;
+    background: rgba(80,150,200,0.85); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem;
+  }
+
+  details.rationale {
+    font-size: 0.85rem; color: #aaa; background: var(--panel2);
+    padding: 0.6rem 1rem; border-radius: 6px; margin-top: 0.5rem;
+  }
+  details.rationale summary { cursor: pointer; color: #88a; user-select: none; padding: 0.2rem 0; }
+  details.rationale summary:hover { color: #aac; }
+  details.rationale[open] summary { color: #ccd; margin-bottom: 0.5rem; }
+  .rationale-body p { margin: 0.4rem 0; line-height: 1.55; color: #ccc; }
+  .rationale-body code {
+    background: #1a1a1a; padding: 0.1rem 0.35rem; border-radius: 3px;
+    font-size: 0.88em; word-break: break-word; color: #aaa;
+  }
+  .rationale-body ul { padding-left: 1.2rem; margin: 0.3rem 0; font-size: 0.85rem; }
+  .rationale-body a { color: var(--accent); text-decoration: none; }
+  .rationale-body a:hover { text-decoration: underline; }
+  .rationale-body h3 {
+    font-size: 0.9rem; margin: 0.8rem 0 0.3rem; color: #ddd;
+  }
+</style>
+</head>
+<body>
+
+<h1>ヴァルール変換</h1>
+<p class="note">カラー画像を、明暗（ヴァルール）確認用のグレースケールに変換する。</p>
+
+<div class="panel">
+  <h2>入力</h2>
+  <div class="row">
+    <label class="file-label" for="src-input">ファイル選択</label>
+    <input type="file" id="src-input" accept="image/*">
+    <button id="paste-btn" type="button" title="クリップボードの画像をペースト (Cmd/Ctrl+V でも可)">ペースト</button>
+    <button id="camera-btn" type="button">カメラ</button>
+    <button id="reset-btn" type="button">サンプルに戻す</button>
+    <span class="status" id="status"></span>
+  </div>
+  <div class="row" style="color: var(--muted); font-size: 0.8rem;">
+    画像を画面にドラッグ＆ドロップ、または Cmd/Ctrl+V でペーストも可
+  </div>
+</div>
+
+<div class="panel">
+  <h2>出力モード</h2>
+  <div class="row">
+    <span class="control-label">アルゴリズム</span>
+    <div class="seg" id="algo-seg">
+      <input type="radio" name="algo" id="algo-bt709" value="bt709" checked>
+      <label for="algo-bt709">BT.709 Y'</label>
+      <input type="radio" name="algo" id="algo-lstar" value="lstar">
+      <label for="algo-lstar">L*</label>
+    </div>
+  </div>
+  <div class="row">
+    <span class="control-label">段階</span>
+    <div class="seg" id="mode-seg">
+      <input type="radio" name="mode" id="mode-continuous" value="continuous" checked>
+      <label for="mode-continuous">連続</label>
+      <input type="radio" name="mode" id="mode-posterize" value="posterize">
+      <label for="mode-posterize">Posterize</label>
+      <input type="radio" name="mode" id="mode-notan2" value="notan2">
+      <label for="mode-notan2">Notan 2</label>
+      <input type="radio" name="mode" id="mode-notan3" value="notan3">
+      <label for="mode-notan3">Notan 3</label>
+    </div>
+    <label style="display: inline-flex; align-items: center; gap: 0.35rem;">
+      <span class="control-label" style="min-width: auto;">段数</span>
+      <select id="posterize-levels" disabled>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4" selected>4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="9">9</option>
+        <option value="16">16</option>
+      </select>
+    </label>
+  </div>
+  <div class="row">
+    <span class="control-label">Squint</span>
+    <input type="range" id="squint-range" min="0" max="32" step="1" value="0" style="flex: 1; max-width: 200px;">
+    <span id="squint-value" style="font-size: 0.85rem; color: var(--muted); min-width: 3.5em;">off</span>
+    <span style="color: var(--muted); font-size: 0.75rem;">（目を細める = Gaussian blur）</span>
+  </div>
+</div>
+
+<div class="grid">
+  <figure>
+    <figcaption>入力 (カラー)</figcaption>
+    <canvas id="canvas-src"></canvas>
+  </figure>
+  <figure>
+    <figcaption id="out-caption">出力（ヴァルール確認用）</figcaption>
+    <canvas id="canvas-out"></canvas>
+  </figure>
+</div>
+
+<div class="panel">
+  <h2>アクション</h2>
+  <div class="row">
+    <button id="share-btn" type="button" title="処理済み画像をペイントアプリ等に送る">📤 共有 / 保存</button>
+    <button id="picker-btn" type="button" title="出力画像をクリック → そのヴァルールの色候補を表示">🎨 色を逆引き</button>
+    <span style="color: var(--muted); font-size: 0.8rem;">
+      「色を逆引き」を ON にして出力画像をクリック → 同じ明度の色候補（Oklab）
+    </span>
+  </div>
+  <div class="palette-panel" id="palette-panel" hidden>
+    <div class="palette-info" id="palette-info"></div>
+    <div class="palette-grid" id="palette-grid"></div>
+  </div>
+</div>
+
+<details class="rationale">
+  <summary>変換の詳細・根拠</summary>
+  <div class="rationale-body">
+    <p>ペイントアプリで「白カラーレイヤーを最上位に重ねる」と出るのと概ね同じ計算で、色を抜いて明暗の組み立てだけを残す。</p>
+
+    <h3>BT.709 Y' (デフォルト)</h3>
+    <p><code>Y' = 0.2126·R + 0.7152·G + 0.0722·B</code></p>
+    <p>係数は ITU-R BT.709 (HDTV/sRGBの輝度標準) で定められた赤・緑・青の重み。緑が最も明るく、青が最も暗く感じるという人間の目の特性に基づく。sRGBガンマ域で直接計算する Y' は、Photoshop / Procreate の "Color" ブレンドモードと概ね同等。</p>
+
+    <h3>L* (CIE Lab)</h3>
+    <p>sRGB → 線形 → 輝度 Y → <code>L* = 116·f(Y) − 16</code> (D65)。知覚均等な明度尺度。Posterize / Notan の段階化と相性が良く、隣り合う段の知覚差が一定になる。</p>
+
+    <h3>Posterize / Notan / Squint</h3>
+    <p>選択した値空間で normalize（BT.709 は 0–255、L* は 0–100）し、N段に量子化。Notan は 2値（しきい 1/2）または 3値（しきい 1/3, 2/3）の特例。Squint は描画前に Gaussian blur を適用して「目を細めた構図」を再現する。</p>
+
+    <h3>色を逆引き (Oklab)</h3>
+    <p>出力グレーの明度を Oklab L にマップし、その L を固定して色相を 0–360° にスイープ。各色相で sRGB ガンメに収まる最大彩度を二分探索で求めて並べる。同じ「見かけの明度」で使える色候補が分かる。</p>
+
+    <ul>
+      <li><a href="https://www.itu.int/rec/R-REC-BT.709/" target="_blank" rel="noopener noreferrer">ITU-R BT.709</a></li>
+      <li><a href="https://www.w3.org/Graphics/Color/sRGB.html" target="_blank" rel="noopener noreferrer">W3C sRGB 仕様</a></li>
+      <li><a href="https://bottosson.github.io/posts/oklab/" target="_blank" rel="noopener noreferrer">Björn Ottosson — Oklab</a></li>
+      <li><a href="https://poynton.ca/notes/colour_and_gamma/" target="_blank" rel="noopener noreferrer">Poynton "Color FAQ"</a></li>
+    </ul>
+  </div>
+</details>
+
+<div class="drop-overlay">画像をドロップ</div>
+
+<div class="camera-modal" id="camera-modal" aria-hidden="true">
+  <video id="camera-video" autoplay playsinline muted></video>
+  <div class="controls">
+    <button id="camera-capture" class="primary" type="button">撮影</button>
+    <button id="camera-close" type="button">閉じる</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const PROC_MAX = 1024;
+  const DEFAULT_SOURCE = 'samples/JoaquinSorolla.jpg';
+
+  // ---------- Value-space conversions ----------
+  function srgbToLinear(c) {
+    const x = c / 255;
+    return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  }
+  function linearToSrgbByte(c) {
+    const x = Math.max(0, c);
+    const v = x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+    return Math.max(0, Math.min(255, Math.round(v * 255)));
+  }
+
+  function pixelToNorm(r, g, b, algo) {
+    if (algo === 'lstar') {
+      const R = srgbToLinear(r), G = srgbToLinear(g), B = srgbToLinear(b);
+      const Y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+      const e = 216 / 24389, k = 24389 / 27;
+      const fY = Y > e ? Math.cbrt(Y) : (k * Y + 16) / 116;
+      return (116 * fY - 16) / 100;
+    }
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  }
+  function normToGrayByte(t, algo) {
+    const v = Math.max(0, Math.min(1, t));
+    if (algo === 'lstar') {
+      const L = v * 100;
+      const e = 216 / 24389, k = 24389 / 27;
+      const fY = (L + 16) / 116;
+      const fY3 = fY * fY * fY;
+      const Y = fY3 > e ? fY3 : (116 * fY - 16) / k;
+      return linearToSrgbByte(Y);
+    }
+    return Math.round(v * 255);
+  }
+  function quantize(t, mode, levels) {
+    const v = Math.max(0, Math.min(1, t));
+    switch (mode) {
+      case 'posterize':
+        if (levels <= 1) return 0;
+        return Math.round(v * (levels - 1)) / (levels - 1);
+      case 'notan2':
+        return v < 0.5 ? 0 : 1;
+      case 'notan3':
+        if (v < 1 / 3) return 0;
+        if (v < 2 / 3) return 0.5;
+        return 1;
+      case 'continuous':
+      default:
+        return v;
+    }
+  }
+  function processImageData(srcData, opts) {
+    const { algo, mode, levels } = opts;
+    const w = srcData.width, h = srcData.height;
+    const out = new ImageData(w, h);
+    const s = srcData.data, o = out.data;
+    for (let i = 0; i < s.length; i += 4) {
+      const t = pixelToNorm(s[i], s[i + 1], s[i + 2], algo);
+      const q = quantize(t, mode, levels);
+      const g = normToGrayByte(q, algo);
+      o[i] = o[i + 1] = o[i + 2] = g;
+      o[i + 3] = s[i + 3];
+    }
+    return out;
+  }
+
+  // ---------- Oklab (Björn Ottosson) ----------
+  function linearRgbToOklab(r, g, b) {
+    const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+    const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+    const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+    const l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+    return [
+      0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+      1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+      0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_,
+    ];
+  }
+  function oklabToLinearRgb(L, a, b) {
+    const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+    const l = l_ * l_ * l_;
+    const m = m_ * m_ * m_;
+    const s = s_ * s_ * s_;
+    return [
+      +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+    ];
+  }
+  function grayByteToOklabL(g) {
+    // grayscale (R=G=B=Y_linear) → Oklab L = Y^(1/3) since LMS matrix rows sum to 1
+    const Y = srgbToLinear(g);
+    return Math.cbrt(Y);
+  }
+  function inSrgbGamut(r, g, b) {
+    const eps = 1e-4;
+    return r >= -eps && r <= 1 + eps && g >= -eps && g <= 1 + eps && b >= -eps && b <= 1 + eps;
+  }
+  function maxChromaAtLHue(L, hueRad, maxC = 0.4) {
+    let lo = 0, hi = maxC;
+    for (let i = 0; i < 18; i++) {
+      const mid = (lo + hi) / 2;
+      const a = mid * Math.cos(hueRad);
+      const b = mid * Math.sin(hueRad);
+      const [r, g, bl] = oklabToLinearRgb(L, a, b);
+      if (inSrgbGamut(r, g, bl)) lo = mid;
+      else hi = mid;
+    }
+    return lo;
+  }
+  function paletteAtL(L, count = 12) {
+    const out = [];
+    for (let i = 0; i < count; i++) {
+      const hue = (i / count) * Math.PI * 2;
+      const c = maxChromaAtLHue(L, hue);
+      const a = c * Math.cos(hue);
+      const b = c * Math.sin(hue);
+      const [lr, lg, lb] = oklabToLinearRgb(L, a, b);
+      const R = linearToSrgbByte(Math.max(0, Math.min(1, lr)));
+      const G = linearToSrgbByte(Math.max(0, Math.min(1, lg)));
+      const B = linearToSrgbByte(Math.max(0, Math.min(1, lb)));
+      out.push({ hue: (hue * 180) / Math.PI, chroma: c, R, G, B });
+    }
+    return out;
+  }
+  function rgbToHex(r, g, b) {
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+  }
+
+  // ---------- Canvas helpers ----------
+  function fitDims(w, h, max) {
+    const s = Math.min(max / w, max / h, 1);
+    return { w: Math.round(w * s), h: Math.round(h * s) };
+  }
+
+  // ---------- State ----------
+  const state = {
+    algo: 'bt709',
+    mode: 'continuous',
+    levels: 4,
+    squint: 0,
+    srcSource: null, // HTMLImageElement | HTMLCanvasElement (un-blurred)
+    pickerOn: false,
+  };
+
+  const els = {
+    fileInput: document.getElementById('src-input'),
+    pasteBtn: document.getElementById('paste-btn'),
+    cameraBtn: document.getElementById('camera-btn'),
+    resetBtn: document.getElementById('reset-btn'),
+    status: document.getElementById('status'),
+    srcCanvas: document.getElementById('canvas-src'),
+    outCanvas: document.getElementById('canvas-out'),
+    outCaption: document.getElementById('out-caption'),
+    posterizeSelect: document.getElementById('posterize-levels'),
+    squintRange: document.getElementById('squint-range'),
+    squintValue: document.getElementById('squint-value'),
+    cameraModal: document.getElementById('camera-modal'),
+    cameraVideo: document.getElementById('camera-video'),
+    cameraCapture: document.getElementById('camera-capture'),
+    cameraClose: document.getElementById('camera-close'),
+    shareBtn: document.getElementById('share-btn'),
+    pickerBtn: document.getElementById('picker-btn'),
+    palettePanel: document.getElementById('palette-panel'),
+    paletteInfo: document.getElementById('palette-info'),
+    paletteGrid: document.getElementById('palette-grid'),
+  };
+
+  function setStatus(msg, isErr = false) {
+    els.status.textContent = msg || '';
+    els.status.classList.toggle('err', !!isErr);
+  }
+  function updateOutCaption() {
+    const algoLabel = state.algo === 'lstar' ? 'L*' : 'BT.709 Y\'';
+    let modeLabel = '連続';
+    if (state.mode === 'posterize') modeLabel = `Posterize ${state.levels}`;
+    else if (state.mode === 'notan2') modeLabel = 'Notan 2値';
+    else if (state.mode === 'notan3') modeLabel = 'Notan 3値';
+    const squintLabel = state.squint > 0 ? ` / Squint ${state.squint}px` : '';
+    els.outCaption.textContent = `出力（${algoLabel} / ${modeLabel}${squintLabel}）`;
+  }
+
+  function srcDims() {
+    const s = state.srcSource;
+    if (!s) return null;
+    const w = s.naturalWidth || s.videoWidth || s.width;
+    const h = s.naturalHeight || s.videoHeight || s.height;
+    return fitDims(w, h, PROC_MAX);
+  }
+
+  function render() {
+    if (!state.srcSource) return;
+    const dims = srcDims();
+    if (!dims) return;
+    const { w, h } = dims;
+    const t0 = performance.now();
+    const srcCtx = els.srcCanvas.getContext('2d');
+    els.srcCanvas.width = w;
+    els.srcCanvas.height = h;
+    srcCtx.filter = state.squint > 0 ? `blur(${state.squint}px)` : 'none';
+    srcCtx.drawImage(state.srcSource, 0, 0, w, h);
+    srcCtx.filter = 'none';
+    const srcData = srcCtx.getImageData(0, 0, w, h);
+
+    const outData = processImageData(srcData, state);
+    els.outCanvas.width = w;
+    els.outCanvas.height = h;
+    els.outCanvas.getContext('2d').putImageData(outData, 0, 0);
+
+    const ms = Math.round(performance.now() - t0);
+    setStatus(`完了 (${w}×${h}px, ${ms}ms)`);
+    updateOutCaption();
+  }
+
+  // ---------- Image loading ----------
+  function loadImage(src, crossOrigin) {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      if (crossOrigin) img.crossOrigin = crossOrigin;
+      img.onload = () => res(img);
+      img.onerror = () => rej(new Error('画像の読み込みに失敗'));
+      img.src = src;
+    });
+  }
+  async function useImageSource(src, opts = {}) {
+    setStatus('読込中…');
+    try {
+      const img = await loadImage(src, opts.crossOrigin);
+      state.srcSource = img;
+      hidePalette();
+      requestAnimationFrame(render);
+    } catch (e) {
+      setStatus(e.message || '読み込みエラー', true);
+      console.error(e);
+    }
+  }
+  function useBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    return useImageSource(url).finally(() => {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
+  function useFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      setStatus('画像ファイルではありません', true);
+      return;
+    }
+    return useBlob(file);
+  }
+
+  // ---------- Input: file ----------
+  els.fileInput.addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) useFile(f);
+  });
+
+  // ---------- Input: paste ----------
+  async function tryClipboardRead() {
+    if (!navigator.clipboard || !navigator.clipboard.read) {
+      setStatus('ペーストは Cmd/Ctrl+V を使ってください', true);
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find(t => t.startsWith('image/'));
+        if (type) {
+          const blob = await item.getType(type);
+          await useBlob(blob);
+          return;
+        }
+      }
+      setStatus('クリップボードに画像がありません', true);
+    } catch (e) {
+      setStatus('クリップボード読込権限が必要 (Cmd/Ctrl+V を試してください)', true);
+    }
+  }
+  els.pasteBtn.addEventListener('click', tryClipboardRead);
+  document.addEventListener('paste', (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const it of items) {
+      if (it.kind === 'file' && it.type.startsWith('image/')) {
+        e.preventDefault();
+        const blob = it.getAsFile();
+        if (blob) useBlob(blob);
+        return;
+      }
+    }
+  });
+
+  // ---------- Input: drag & drop ----------
+  let dragDepth = 0;
+  window.addEventListener('dragenter', (e) => {
+    if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
+    e.preventDefault();
+    dragDepth++;
+    document.body.classList.add('drag-over');
+  });
+  window.addEventListener('dragover', (e) => {
+    if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+  window.addEventListener('dragleave', () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) document.body.classList.remove('drag-over');
+  });
+  window.addEventListener('drop', (e) => {
+    if (!e.dataTransfer) return;
+    e.preventDefault();
+    dragDepth = 0;
+    document.body.classList.remove('drag-over');
+    const f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) useFile(f);
+  });
+
+  // ---------- Input: camera ----------
+  let cameraStream = null;
+  async function openCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('このブラウザはカメラ非対応', true);
+      return;
+    }
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      els.cameraVideo.srcObject = cameraStream;
+      els.cameraModal.classList.add('open');
+      els.cameraModal.setAttribute('aria-hidden', 'false');
+    } catch (e) {
+      setStatus('カメラへのアクセスが拒否されました', true);
+    }
+  }
+  function closeCamera() {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      cameraStream = null;
+    }
+    els.cameraVideo.srcObject = null;
+    els.cameraModal.classList.remove('open');
+    els.cameraModal.setAttribute('aria-hidden', 'true');
+  }
+  function captureFrame() {
+    const v = els.cameraVideo;
+    if (!v.videoWidth) {
+      setStatus('カメラ初期化中…', true);
+      return;
+    }
+    const snap = document.createElement('canvas');
+    snap.width = v.videoWidth;
+    snap.height = v.videoHeight;
+    snap.getContext('2d').drawImage(v, 0, 0);
+    state.srcSource = snap;
+    closeCamera();
+    hidePalette();
+    requestAnimationFrame(render);
+  }
+  els.cameraBtn.addEventListener('click', openCamera);
+  els.cameraCapture.addEventListener('click', captureFrame);
+  els.cameraClose.addEventListener('click', closeCamera);
+
+  // ---------- Reset ----------
+  els.resetBtn.addEventListener('click', () => {
+    els.fileInput.value = '';
+    useImageSource(DEFAULT_SOURCE);
+  });
+
+  // ---------- Controls ----------
+  document.querySelectorAll('input[name="algo"]').forEach(r => {
+    r.addEventListener('change', (e) => { state.algo = e.target.value; render(); });
+  });
+  document.querySelectorAll('input[name="mode"]').forEach(r => {
+    r.addEventListener('change', (e) => {
+      state.mode = e.target.value;
+      els.posterizeSelect.disabled = state.mode !== 'posterize';
+      render();
+    });
+  });
+  els.posterizeSelect.addEventListener('change', (e) => {
+    state.levels = parseInt(e.target.value, 10);
+    if (state.mode === 'posterize') render();
+  });
+  els.squintRange.addEventListener('input', (e) => {
+    state.squint = parseInt(e.target.value, 10);
+    els.squintValue.textContent = state.squint === 0 ? 'off' : `${state.squint}px`;
+    render();
+  });
+
+  // ---------- Share ----------
+  function canShareFiles() {
+    try {
+      const dummy = new File([new Uint8Array(1)], 'x.png', { type: 'image/png' });
+      return !!(navigator.canShare && navigator.canShare({ files: [dummy] }));
+    } catch (e) { return false; }
+  }
+  async function shareOutput() {
+    if (els.outCanvas.width === 0) {
+      setStatus('出力画像がありません', true);
+      return;
+    }
+    const blob = await new Promise(r => els.outCanvas.toBlob(r, 'image/png'));
+    if (!blob) { setStatus('画像化に失敗', true); return; }
+    const file = new File([blob], 'value.png', { type: 'image/png' });
+    if (canShareFiles()) {
+      try {
+        await navigator.share({ files: [file], title: 'ヴァルール変換' });
+        setStatus('共有を開きました');
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // user cancelled
+      }
+    }
+    // fallback: download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'value.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus('ダウンロードしました');
+  }
+  els.shareBtn.addEventListener('click', shareOutput);
+
+  // ---------- Reverse value picker ----------
+  function hidePalette() {
+    els.palettePanel.hidden = true;
+    els.paletteGrid.innerHTML = '';
+    els.paletteInfo.innerHTML = '';
+  }
+  function showPaletteAt(canvasX, canvasY) {
+    const ctx = els.outCanvas.getContext('2d');
+    const cx = Math.max(0, Math.min(els.outCanvas.width - 1, Math.round(canvasX)));
+    const cy = Math.max(0, Math.min(els.outCanvas.height - 1, Math.round(canvasY)));
+    const px = ctx.getImageData(cx, cy, 1, 1).data;
+    const g = px[0]; // output is grayscale, so R=G=B
+    const L = grayByteToOklabL(g);
+
+    const swatches = paletteAtL(L, 12);
+    els.paletteInfo.innerHTML = `
+      <span>クリック位置のグレー: <code>${rgbToHex(g, g, g)}</code></span>
+      <span>Oklab L = <code>${L.toFixed(3)}</code></span>
+      <span style="color: var(--muted)">スウォッチをクリックでHEXコピー</span>
+    `;
+    els.paletteGrid.innerHTML = '';
+    swatches.forEach(s => {
+      const hex = rgbToHex(s.R, s.G, s.B);
+      const div = document.createElement('div');
+      div.className = 'swatch';
+      div.style.background = hex;
+      div.title = `${hex}  hue=${s.hue.toFixed(0)}°  chroma=${s.chroma.toFixed(3)}`;
+      div.innerHTML = `<div class="hex">${hex}</div>`;
+      div.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(hex);
+          div.classList.add('copied');
+          setTimeout(() => div.classList.remove('copied'), 700);
+        } catch (e) {
+          setStatus('クリップボードへの書き込みに失敗', true);
+        }
+      });
+      els.paletteGrid.appendChild(div);
+    });
+    els.palettePanel.hidden = false;
+  }
+  function pickFromEvent(e) {
+    const rect = els.outCanvas.getBoundingClientRect();
+    const scaleX = els.outCanvas.width / rect.width;
+    const scaleY = els.outCanvas.height / rect.height;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleY;
+    showPaletteAt(x, y);
+  }
+  els.outCanvas.addEventListener('click', (e) => {
+    if (!state.pickerOn) return;
+    pickFromEvent(e);
+  });
+  els.pickerBtn.addEventListener('click', () => {
+    state.pickerOn = !state.pickerOn;
+    els.pickerBtn.classList.toggle('toggle-on', state.pickerOn);
+    els.outCanvas.classList.toggle('pickable', state.pickerOn);
+    if (!state.pickerOn) hidePalette();
+    else setStatus('出力画像をクリックしてヴァルールに合う色候補を表示');
+  });
+
+  // ---------- URL params ----------
+  const params = new URLSearchParams(location.search);
+  let initialSrc = params.get('img') || params.get('source') || DEFAULT_SOURCE;
+  const useCors = params.has('img');
+
+  // ---------- Service worker ----------
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+
+  // Hide share button if neither share nor download will work (unlikely).
+  // We always have download fallback, so keep it visible.
+
+  // ---------- Boot ----------
+  useImageSource(initialSrc, useCors ? { crossOrigin: 'anonymous' } : {})
+    .then(() => {
+      if (params.get('capture') === '1') openCamera();
+      if (params.get('paste') === '1') setStatus('Cmd/Ctrl+V で画像をペースト');
+    });
+})();
+</script>
+
+</body>
+</html>

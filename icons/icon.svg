@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>ヴァルール変換</title>
+  <defs>
+    <clipPath id="round">
+      <rect width="512" height="512" rx="96" ry="96"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#round)">
+    <rect width="512" height="512" fill="#1a1a1a"/>
+    <g transform="translate(64 64)">
+      <rect x="0" y="0"   width="384" height="76.8" fill="#111111"/>
+      <rect x="0" y="76.8"  width="384" height="76.8" fill="#444444"/>
+      <rect x="0" y="153.6" width="384" height="76.8" fill="#777777"/>
+      <rect x="0" y="230.4" width="384" height="76.8" fill="#aaaaaa"/>
+      <rect x="0" y="307.2" width="384" height="76.8" fill="#dddddd"/>
+    </g>
+  </g>
+</svg>
