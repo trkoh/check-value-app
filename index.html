@@ -141,15 +141,52 @@
     display: flex; align-items: flex-end; justify-content: center;
     overflow: hidden;
   }
-  .swatch .hex {
-    font-size: 0.65rem; color: #fff; background: rgba(0,0,0,0.55);
-    width: 100%; text-align: center; padding: 0.1rem 0; font-family: monospace;
+  .swatch .info {
+    width: 100%; background: rgba(0,0,0,0.6); padding: 2px 3px;
+    font-family: monospace; text-align: center; color: #fff;
   }
+  .swatch .hex { font-size: 0.62rem; line-height: 1.1; }
+  .swatch .hsv { font-size: 0.58rem; color: #ddd; line-height: 1.1; }
+  .swatch.selected { outline: 2px solid #6af; outline-offset: 1px; }
   .swatch.copied::after {
     content: 'コピー'; position: absolute; inset: 0;
     background: rgba(80,150,200,0.85); color: #fff;
     display: flex; align-items: center; justify-content: center;
     font-size: 0.8rem;
+  }
+
+  .palette-detail {
+    margin-top: 0.7rem; padding: 0.6rem 0.7rem; background: #232323;
+    border-radius: 4px; display: none;
+  }
+  .palette-detail.open { display: block; }
+  .selected-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+  .selected-swatch-large {
+    width: 40px; height: 40px; border-radius: 4px; border: 1px solid #444;
+  }
+  .selected-hex { font-family: monospace; font-size: 1rem; color: #fff; }
+  .selected-note { color: #888; font-size: 0.75rem; }
+
+  .bar-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.4rem 0; }
+  .bar-label { color: #ccc; font-size: 0.85rem; min-width: 4.2em; }
+  .bar {
+    flex: 1; height: 18px; border-radius: 3px; position: relative;
+    border: 1px solid #444; overflow: visible;
+  }
+  .bar.hue {
+    background: linear-gradient(to right,
+      #ff0000 0%, #ffff00 16.66%, #00ff00 33.33%,
+      #00ffff 50%, #0000ff 66.66%, #ff00ff 83.33%, #ff0000 100%);
+  }
+  .bar-marker {
+    position: absolute; top: -3px; bottom: -3px; width: 3px;
+    background: #fff; border: 1px solid #000; transform: translateX(-50%);
+    box-shadow: 0 0 2px rgba(0,0,0,0.8);
+    pointer-events: none;
+  }
+  .bar-value {
+    font-family: monospace; font-size: 0.85rem; min-width: 3em;
+    text-align: right; color: #ddd;
   }
 
   details.rationale {
@@ -263,6 +300,29 @@
   <div class="palette-panel" id="palette-panel" hidden>
     <div class="palette-info" id="palette-info"></div>
     <div class="palette-grid" id="palette-grid"></div>
+    <div class="palette-detail" id="palette-detail">
+      <div class="selected-row">
+        <div class="selected-swatch-large" id="selected-swatch-large"></div>
+        <div class="selected-hex" id="selected-hex"></div>
+        <button id="copy-hex-btn" type="button" style="padding:0.3rem 0.6rem; font-size:0.8rem;">HEXコピー</button>
+        <span class="selected-note">HeavyPaint の H/S/V スライダーに合わせるための数値:</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">色相 H</span>
+        <div class="bar hue" id="bar-hue"><div class="bar-marker" id="bar-hue-marker"></div></div>
+        <span class="bar-value" id="bar-hue-value">—</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">彩度 S</span>
+        <div class="bar" id="bar-sat"><div class="bar-marker" id="bar-sat-marker"></div></div>
+        <span class="bar-value" id="bar-sat-value">—</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">明度 V</span>
+        <div class="bar" id="bar-val"><div class="bar-marker" id="bar-val-marker"></div></div>
+        <span class="bar-value" id="bar-val-value">—</span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -448,6 +508,46 @@
     return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
   }
 
+  function rgbToHsv(r, g, b) {
+    const rn = r / 255, gn = g / 255, bn = b / 255;
+    const mx = Math.max(rn, gn, bn), mn = Math.min(rn, gn, bn);
+    const d = mx - mn;
+    let h = 0;
+    if (d > 0) {
+      if (mx === rn) h = ((gn - bn) / d) % 6;
+      else if (mx === gn) h = (bn - rn) / d + 2;
+      else h = (rn - gn) / d + 4;
+      h *= 60;
+      if (h < 0) h += 360;
+    }
+    const s = mx === 0 ? 0 : (d / mx) * 100;
+    const v = mx * 100;
+    return { h, s, v };
+  }
+
+  function hsvToRgb(h, s, v) {
+    const sn = s / 100, vn = v / 100;
+    const c = vn * sn;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = vn - c;
+    let rp = 0, gp = 0, bp = 0;
+    if (h < 60) { rp = c; gp = x; bp = 0; }
+    else if (h < 120) { rp = x; gp = c; bp = 0; }
+    else if (h < 180) { rp = 0; gp = c; bp = x; }
+    else if (h < 240) { rp = 0; gp = x; bp = c; }
+    else if (h < 300) { rp = x; gp = 0; bp = c; }
+    else { rp = c; gp = 0; bp = x; }
+    return [
+      Math.round((rp + m) * 255),
+      Math.round((gp + m) * 255),
+      Math.round((bp + m) * 255),
+    ];
+  }
+  function hsvToHex(h, s, v) {
+    const [r, g, b] = hsvToRgb(h, s, v);
+    return rgbToHex(r, g, b);
+  }
+
   // ---------- Canvas helpers ----------
   function fitDims(w, h, max) {
     const s = Math.min(max / w, max / h, 1);
@@ -489,7 +589,21 @@
     palettePanel: document.getElementById('palette-panel'),
     paletteInfo: document.getElementById('palette-info'),
     paletteGrid: document.getElementById('palette-grid'),
+    paletteDetail: document.getElementById('palette-detail'),
+    selectedSwatchLarge: document.getElementById('selected-swatch-large'),
+    selectedHex: document.getElementById('selected-hex'),
+    copyHexBtn: document.getElementById('copy-hex-btn'),
+    barHue: document.getElementById('bar-hue'),
+    barHueMarker: document.getElementById('bar-hue-marker'),
+    barHueValue: document.getElementById('bar-hue-value'),
+    barSat: document.getElementById('bar-sat'),
+    barSatMarker: document.getElementById('bar-sat-marker'),
+    barSatValue: document.getElementById('bar-sat-value'),
+    barVal: document.getElementById('bar-val'),
+    barValMarker: document.getElementById('bar-val-marker'),
+    barValValue: document.getElementById('bar-val-value'),
   };
+  let selectedHex = null;
 
   function setStatus(msg, isErr = false) {
     els.status.textContent = msg || '';
@@ -782,42 +896,88 @@
     els.palettePanel.hidden = true;
     els.paletteGrid.innerHTML = '';
     els.paletteInfo.innerHTML = '';
+    els.paletteDetail.classList.remove('open');
+    selectedHex = null;
+  }
+  function selectSwatchByColor(R, G, B, swatchEl) {
+    const hex = rgbToHex(R, G, B);
+    selectedHex = hex;
+    const { h, s, v } = rgbToHsv(R, G, B);
+    els.selectedSwatchLarge.style.background = hex;
+    els.selectedHex.textContent = hex;
+
+    els.barHueMarker.style.left = (h / 360 * 100).toFixed(2) + '%';
+    els.barHueValue.textContent = Math.round(h) + '°';
+
+    els.barSat.style.background =
+      'linear-gradient(to right, ' + hsvToHex(h, 0, v) + ', ' + hsvToHex(h, 100, v) + ')';
+    els.barSatMarker.style.left = s.toFixed(2) + '%';
+    els.barSatValue.textContent = Math.round(s);
+
+    els.barVal.style.background =
+      'linear-gradient(to right, ' + hsvToHex(h, s, 0) + ', ' + hsvToHex(h, s, 100) + ')';
+    els.barValMarker.style.left = v.toFixed(2) + '%';
+    els.barValValue.textContent = Math.round(v);
+
+    els.paletteDetail.classList.add('open');
+    document.querySelectorAll('.swatch.selected').forEach(el => el.classList.remove('selected'));
+    if (swatchEl) swatchEl.classList.add('selected');
+  }
+  async function copySelectedHex(srcEl) {
+    if (!selectedHex) return;
+    try {
+      await navigator.clipboard.writeText(selectedHex);
+      if (srcEl) {
+        srcEl.classList.add('copied');
+        setTimeout(() => srcEl.classList.remove('copied'), 700);
+      } else {
+        const t = els.copyHexBtn.textContent;
+        els.copyHexBtn.textContent = 'コピー済';
+        setTimeout(() => { els.copyHexBtn.textContent = t; }, 700);
+      }
+    } catch (e) {
+      setStatus('クリップボードへの書き込みに失敗', true);
+    }
   }
   function showPaletteAt(canvasX, canvasY) {
     const ctx = els.outCanvas.getContext('2d');
     const cx = Math.max(0, Math.min(els.outCanvas.width - 1, Math.round(canvasX)));
     const cy = Math.max(0, Math.min(els.outCanvas.height - 1, Math.round(canvasY)));
     const px = ctx.getImageData(cx, cy, 1, 1).data;
-    const g = px[0]; // output is grayscale, so R=G=B
+    const g = px[0];
     const L = grayByteToOklabL(g);
 
     const swatches = paletteAtL(L, 12);
     els.paletteInfo.innerHTML = `
       <span>クリック位置のグレー: <code>${rgbToHex(g, g, g)}</code></span>
       <span>明度 <code>${L.toFixed(3)}</code> <span style="color: var(--muted)">(Oklab L, 0=黒〜1=白)</span></span>
-      <span style="color: var(--muted)">スウォッチをクリックでHEXコピー</span>
+      <span style="color: var(--muted)">スウォッチを選ぶと下にH/S/Vが出る</span>
     `;
     els.paletteGrid.innerHTML = '';
-    swatches.forEach(s => {
+    swatches.forEach((s, idx) => {
       const hex = rgbToHex(s.R, s.G, s.B);
+      const hsv = rgbToHsv(s.R, s.G, s.B);
       const div = document.createElement('div');
       div.className = 'swatch';
       div.style.background = hex;
-      div.title = `${hex}  hue=${s.hue.toFixed(0)}°  chroma=${s.chroma.toFixed(3)}`;
-      div.innerHTML = `<div class="hex">${hex}</div>`;
-      div.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(hex);
-          div.classList.add('copied');
-          setTimeout(() => div.classList.remove('copied'), 700);
-        } catch (e) {
-          setStatus('クリップボードへの書き込みに失敗', true);
-        }
+      div.title = `${hex}  H${Math.round(hsv.h)} S${Math.round(hsv.s)} V${Math.round(hsv.v)}`;
+      div.innerHTML =
+        '<div class="info">' +
+          '<div class="hex">' + hex + '</div>' +
+          '<div class="hsv">H' + Math.round(hsv.h) + ' S' + Math.round(hsv.s) + ' V' + Math.round(hsv.v) + '</div>' +
+        '</div>';
+      div.addEventListener('click', () => {
+        selectSwatchByColor(s.R, s.G, s.B, div);
+        copySelectedHex(div);
       });
       els.paletteGrid.appendChild(div);
+      if (idx === 0) {
+        selectSwatchByColor(s.R, s.G, s.B, div);
+      }
     });
     els.palettePanel.hidden = false;
   }
+  els.copyHexBtn.addEventListener('click', () => copySelectedHex());
   function pickFromEvent(e) {
     const rect = els.outCanvas.getBoundingClientRect();
     const scaleX = els.outCanvas.width / rect.width;
