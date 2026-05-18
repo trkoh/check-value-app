@@ -174,25 +174,29 @@
 <div class="panel">
   <h2>出力モード</h2>
   <div class="row">
-    <span class="control-label">アルゴリズム</span>
+    <span class="control-label">計算方式</span>
     <div class="seg" id="algo-seg">
       <input type="radio" name="algo" id="algo-bt709" value="bt709" checked>
-      <label for="algo-bt709">BT.709 Y'</label>
+      <label for="algo-bt709" title="Photoshop でモノクロ塗りつぶしレイヤー + Color ブレンドを重ねたのと同じ計算 (BT.709 Y')">Photoshop互換</label>
       <input type="radio" name="algo" id="algo-lstar" value="lstar">
-      <label for="algo-lstar">L*</label>
+      <label for="algo-lstar" title="段階化したとき各段の明度差が見た目で等間隔になる (CIE L*)">段階向け</label>
     </div>
+  </div>
+  <div class="row" style="color: var(--muted); font-size: 0.78rem; line-height: 1.45; margin-top: 0.2rem; display: block;">
+    <div><b style="color:#ccc">Photoshop互換</b>: 「モノクロ塗りつぶしレイヤー + Color ブレンドモード」を乗せたのと同じ計算。<u>普段のヴァルール確認はこっち</u>。 <span style="color:#666">(BT.709 Y')</span></div>
+    <div><b style="color:#ccc">段階向け</b>: 下の Posterize や Notan で段階化するとき、隣り合う段の明度差が見た目で等間隔になる。<u>段階化と組み合わせて使う</u>。 <span style="color:#666">(CIE L*)</span></div>
   </div>
   <div class="row">
     <span class="control-label">段階</span>
     <div class="seg" id="mode-seg">
       <input type="radio" name="mode" id="mode-continuous" value="continuous" checked>
-      <label for="mode-continuous">連続</label>
+      <label for="mode-continuous" title="グレーを連続的に">連続</label>
       <input type="radio" name="mode" id="mode-posterize" value="posterize">
-      <label for="mode-posterize">Posterize</label>
+      <label for="mode-posterize" title="指定段数に明度を量子化（ポスタリゼーション）">Posterize</label>
       <input type="radio" name="mode" id="mode-notan2" value="notan2">
-      <label for="mode-notan2">Notan 2</label>
+      <label for="mode-notan2" title="明暗の2値化">Notan 2</label>
       <input type="radio" name="mode" id="mode-notan3" value="notan3">
-      <label for="mode-notan3">Notan 3</label>
+      <label for="mode-notan3" title="明・中・暗の3値化">Notan 3</label>
     </div>
     <label style="display: inline-flex; align-items: center; gap: 0.35rem;">
       <span class="control-label" style="min-width: auto;">段数</span>
@@ -208,10 +212,10 @@
     </label>
   </div>
   <div class="row">
-    <span class="control-label">Squint</span>
+    <span class="control-label" title="目を細めて見る効果。ぼかして大きい明暗の塊だけを残す。">目を細める</span>
     <input type="range" id="squint-range" min="0" max="32" step="1" value="0" style="flex: 1; max-width: 200px;">
     <span id="squint-value" style="font-size: 0.85rem; color: var(--muted); min-width: 3.5em;">off</span>
-    <span style="color: var(--muted); font-size: 0.75rem;">（目を細める = Gaussian blur）</span>
+    <span style="color: var(--muted); font-size: 0.75rem;">（squint test = Gaussian blur）</span>
   </div>
 </div>
 
@@ -459,12 +463,12 @@
     els.status.classList.toggle('err', !!isErr);
   }
   function updateOutCaption() {
-    const algoLabel = state.algo === 'lstar' ? 'L*' : 'BT.709 Y\'';
+    const algoLabel = state.algo === 'lstar' ? '段階向け' : 'Photoshop互換';
     let modeLabel = '連続';
-    if (state.mode === 'posterize') modeLabel = `Posterize ${state.levels}`;
+    if (state.mode === 'posterize') modeLabel = `Posterize ${state.levels}段`;
     else if (state.mode === 'notan2') modeLabel = 'Notan 2値';
     else if (state.mode === 'notan3') modeLabel = 'Notan 3値';
-    const squintLabel = state.squint > 0 ? ` / Squint ${state.squint}px` : '';
+    const squintLabel = state.squint > 0 ? ` / 目細め ${state.squint}px` : '';
     els.outCaption.textContent = `出力（${algoLabel} / ${modeLabel}${squintLabel}）`;
   }
 
@@ -730,7 +734,7 @@
     const swatches = paletteAtL(L, 12);
     els.paletteInfo.innerHTML = `
       <span>クリック位置のグレー: <code>${rgbToHex(g, g, g)}</code></span>
-      <span>Oklab L = <code>${L.toFixed(3)}</code></span>
+      <span>明度 <code>${L.toFixed(3)}</code> <span style="color: var(--muted)">(Oklab L, 0=黒〜1=白)</span></span>
       <span style="color: var(--muted)">スウォッチをクリックでHEXコピー</span>
     `;
     els.paletteGrid.innerHTML = '';
