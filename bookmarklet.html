@@ -29,9 +29,19 @@
 <p>下のボタンを、ブラウザのブックマークバーに <b>ドラッグ</b> してください。<br>
 以降は任意のWebページで、このブックマークをクリックすると、そのページで一番大きい画像のヴァルール変換結果が新規タブで開きます。</p>
 
-<a class="bm" href="javascript:(function()%7Bvar%20i%3DArray.from(document.images)%3Bif(!i.length)%7Balert('%E7%94%BB%E5%83%8F%E3%81%8C%E8%A6%8B%E3%81%A4%E3%81%8B%E3%82%8A%E3%81%BE%E3%81%9B%E3%82%93')%3Breturn%7Di.sort(function(a%2Cb)%7Breturn(b.naturalWidth*b.naturalHeight)-(a.naturalWidth*a.naturalHeight)%7D)%3Bvar%20u%3Di%5B0%5D.currentSrc%7C%7Ci%5B0%5D.src%3Bwindow.open('https%3A%2F%2Fodayakalife.dev%2Fcheck-value-app%2F%3Fimg%3D'%2BencodeURIComponent(u)%2C'_blank')%3B%7D)()">▶ ヴァルール確認</a>
+<a class="bm" href="javascript:(function()%7Bvar%20i%3DArray.from(document.images).filter(function(x)%7Breturn%20x.naturalWidth%3E50%7D)%3Bif(!i.length)%7Balert('%E7%94%BB%E5%83%8F%E3%81%8C%E8%A6%8B%E3%81%A4%E3%81%8B%E3%82%8A%E3%81%BE%E3%81%9B%E3%82%93')%3Breturn%7Di.sort(function(a%2Cb)%7Breturn(b.naturalWidth*b.naturalHeight)-(a.naturalWidth*a.naturalHeight)%7D)%3Bvar%20im%3Di%5B0%5D%2Cu%3Dim.currentSrc%7C%7Cim.src%2Cc%3Dfalse%3Btry%7Bvar%20r%3Ddocument.createRange()%3Br.selectNode(im)%3Bvar%20s%3Dwindow.getSelection()%3Bs.removeAllRanges()%3Bs.addRange(r)%3Bc%3Ddocument.execCommand('copy')%3Bs.removeAllRanges()%7Dcatch(e)%7B%7Dwindow.open('https%3A%2F%2Fodayakalife.dev%2Fcheck-value-app%2F'%2B(c%3F'%3Fpaste%3D1'%3A'%3Fimg%3D'%2BencodeURIComponent(u))%2C'_blank')%7D)()">▶ ヴァルール確認</a>
 
-<p class="muted">クリックすると現ページに画像が無い旨のアラートが出るのは正常です（このページに `&lt;img&gt;` が無いため）。</p>
+<p class="muted">クリックすると現ページに画像が無い旨のアラートが出るのは正常です（このページに <code>&lt;img&gt;</code> が無いため）。</p>
+
+<h2>v2 への更新点 (2026-05-18)</h2>
+<p>Pinterest など <b>CORS 非対応の画像ホスト</b>（<code>i.pinimg.com</code> 等）で旧版が動かなかったため、ロジックを変更:</p>
+<ol>
+  <li>ページ内の最大の <code>&lt;img&gt;</code> を選択して <code>execCommand('copy')</code> で <b>画像データそのものを</b>クリップボードへコピー（右クリック→「画像をコピー」と同じ機構なので、CORS を経由しない）</li>
+  <li>本ツールを <code>?paste=1</code> で開く</li>
+  <li>本ツール側にペーストオーバーレイが出るので、ボタンを1回押すか Cmd/Ctrl+V でペースト完了</li>
+</ol>
+<p>コピーが失敗した場合のみ、旧版同等の <code>?img=URL</code> パスにフォールバックする。</p>
+<p class="muted"><b>古いブックマークを使っている場合は、再度ドラッグして上書きしてください。</b></p>
 
 <h2>ドラッグできない場合の手動設定</h2>
 <ol>
@@ -39,20 +49,21 @@
   <li>ブックマークを編集 → 名前を「ヴァルール確認」に、URL を以下に置き換える</li>
 </ol>
 
-<pre id="src">javascript:(function(){var i=Array.from(document.images);if(!i.length){alert('画像が見つかりません');return}i.sort(function(a,b){return(b.naturalWidth*b.naturalHeight)-(a.naturalWidth*a.naturalHeight)});var u=i[0].currentSrc||i[0].src;window.open('https://odayakalife.dev/check-value-app/?img='+encodeURIComponent(u),'_blank')})()</pre>
+<pre id="src">javascript:(function(){var i=Array.from(document.images).filter(function(x){return x.naturalWidth>50});if(!i.length){alert('画像が見つかりません');return}i.sort(function(a,b){return(b.naturalWidth*b.naturalHeight)-(a.naturalWidth*a.naturalHeight)});var im=i[0],u=im.currentSrc||im.src,c=false;try{var r=document.createRange();r.selectNode(im);var s=window.getSelection();s.removeAllRanges();s.addRange(r);c=document.execCommand('copy');s.removeAllRanges()}catch(e){}window.open('https://odayakalife.dev/check-value-app/'+(c?'?paste=1':'?img='+encodeURIComponent(u)),'_blank')})()</pre>
 
 <p><button onclick="navigator.clipboard.writeText(document.getElementById('src').textContent).then(()=>{this.textContent='コピー済'})" style="background:#3a3a3a;color:#ddd;border:1px solid #555;padding:0.4rem 0.8rem;border-radius:4px;cursor:pointer;">↑をコピー</button></p>
 
 <h2>動作する条件 / しない条件</h2>
 <ul>
   <li>✅ ページに <code>&lt;img&gt;</code> として埋め込まれた画像があれば拾える</li>
+  <li>✅ Pinterest など CORS 非対応ホストでも動作（v2 でクリップボード経由に変更）</li>
   <li>❌ CSS の <code>background-image</code> で配置されている画像（Pinterest のグリッド画面など）は拾えない → 個別の画像詳細ページに飛んでから起動</li>
-  <li>❌ サイトの Content Security Policy (CSP) で <code>javascript:</code> URL がブロックされていると無効（X (Twitter) など）→ 画像を新規タブで開いてから起動するか、画像URLを手で <code>?img=</code> に渡す</li>
-  <li>⚠️ 渡された画像URLが CORS を許可していない場合、本ツール側で読込みが失敗する。サムネイル経由で済む場合は問題ないが、認証付き画像（要ログイン）は不可</li>
+  <li>❌ サイトの Content Security Policy (CSP) で <code>javascript:</code> URL がブロックされていると無効（X (Twitter) など）→ 画像を新規タブで開いてから起動するか、手動で右クリック→画像をコピー→PWAで Cmd+V</li>
+  <li>⚠️ <code>execCommand('copy')</code> は deprecated（廃止予定）扱いだが、Chrome/Safari/Firefox の現行版で動作する。将来 ClipboardItem API への移行が必要になる可能性</li>
 </ul>
 
 <h2>このページの仕組み</h2>
-<p>ブックマークレットは <code>javascript:</code> スキームの URL。ブラウザは URL バーやブックマークから <code>javascript:</code> が呼ばれた時、現在ページの window context で JS を実行する。これは <a href="https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/javascript" target="_blank" rel="noopener">MDN: javascript: URLs</a> に仕様化された挙動。ブックマークバーへドラッグ可能なのは、HTML の <code>&lt;a href="javascript:..."&gt;</code> の標準的なドラッグ挙動による（HTML Living Standard, dragstart）。</p>
+<p>ブックマークレットは <code>javascript:</code> スキームの URL。ブラウザは URL バーやブックマークから <code>javascript:</code> が呼ばれた時、現在ページの window context で JS を実行する（<a href="https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/javascript" target="_blank" rel="noopener">MDN: javascript: URLs</a>）。<code>execCommand('copy')</code> で選択中の <code>&lt;img&gt;</code> をコピーすると、ブラウザは内部的に画像のピクセルデータをクリップボードへ転送する（右クリック→画像をコピー と同じ機構）。これにより、画像ホストの CORS 設定に依存せずピクセルを移送できる。</p>
 
 <p><a href="./">← ヴァルール確認ツールに戻る</a></p>
 

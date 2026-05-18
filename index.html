@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1a1a1a">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Value">
@@ -96,6 +97,26 @@
     padding: 1rem; padding-top: max(1rem, env(safe-area-inset-top));
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
+
+  .paste-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.78);
+    z-index: 1050;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 1rem;
+    padding: 1.5rem; text-align: center;
+  }
+  .paste-overlay[hidden] { display: none; }
+  .paste-overlay-icon { font-size: 2.5rem; }
+  .paste-overlay-title { font-size: 1.1rem; color: #fff; font-weight: 600; max-width: 360px; }
+  .paste-overlay-btn {
+    font-size: 1.15rem; padding: 0.9rem 1.6rem;
+    background: #356; color: #fff; border: 1px solid #588;
+    border-radius: 8px; cursor: pointer;
+  }
+  .paste-overlay-btn:hover { background: #467; }
+  .paste-overlay-hint { color: #bbb; font-size: 0.85rem; max-width: 360px; }
+  .paste-overlay-close { color: #888; background: none; border: none; font-size: 0.85rem; cursor: pointer; }
+  .paste-overlay-close:hover { color: #ccc; }
   .camera-modal.open { display: flex; }
   .camera-modal video {
     max-width: 100%; max-height: 70vh; background: #000;
@@ -274,6 +295,14 @@
 
 <div class="drop-overlay">画像をドロップ</div>
 
+<div class="paste-overlay" id="paste-overlay" hidden>
+  <div class="paste-overlay-icon">📋</div>
+  <div class="paste-overlay-title" id="paste-overlay-title">クリップボードから貼り付け</div>
+  <button class="paste-overlay-btn" id="paste-overlay-btn" type="button">クリックでペースト</button>
+  <div class="paste-overlay-hint">または Cmd / Ctrl + V でペースト</div>
+  <button class="paste-overlay-close" id="paste-overlay-close" type="button">閉じる</button>
+</div>
+
 <div class="camera-modal" id="camera-modal" aria-hidden="true">
   <video id="camera-video" autoplay playsinline muted></video>
   <div class="controls">
@@ -451,6 +480,10 @@
     cameraVideo: document.getElementById('camera-video'),
     cameraCapture: document.getElementById('camera-capture'),
     cameraClose: document.getElementById('camera-close'),
+    pasteOverlay: document.getElementById('paste-overlay'),
+    pasteOverlayTitle: document.getElementById('paste-overlay-title'),
+    pasteOverlayBtn: document.getElementById('paste-overlay-btn'),
+    pasteOverlayClose: document.getElementById('paste-overlay-close'),
     shareBtn: document.getElementById('share-btn'),
     pickerBtn: document.getElementById('picker-btn'),
     palettePanel: document.getElementById('palette-panel'),
@@ -520,9 +553,17 @@
       const img = await loadImage(src, opts.crossOrigin);
       state.srcSource = img;
       hidePalette();
+      hidePasteOverlay();
       requestAnimationFrame(render);
     } catch (e) {
-      setStatus(e.message || '読み込みエラー', true);
+      const isRemote = /^https?:/i.test(src);
+      if (isRemote && opts.crossOrigin) {
+        // Most likely CORS — show prominent paste fallback
+        setStatus('CORS で読込み不可。元ページで画像を右クリック→「画像をコピー」→ こちらに戻ってペースト', true);
+        showPasteOverlay('画像URLが CORS で読めません。元ページで画像を右クリック→「画像をコピー」してから、ここに戻ってペースト。');
+      } else {
+        setStatus(e.message || '読み込みエラー', true);
+      }
       console.error(e);
     }
   }
@@ -550,7 +591,7 @@
   async function tryClipboardRead() {
     if (!navigator.clipboard || !navigator.clipboard.read) {
       setStatus('ペーストは Cmd/Ctrl+V を使ってください', true);
-      return;
+      return false;
     }
     try {
       const items = await navigator.clipboard.read();
@@ -559,13 +600,15 @@
         if (type) {
           const blob = await item.getType(type);
           await useBlob(blob);
-          return;
+          hidePasteOverlay();
+          return true;
         }
       }
       setStatus('クリップボードに画像がありません', true);
     } catch (e) {
       setStatus('クリップボード読込権限が必要 (Cmd/Ctrl+V を試してください)', true);
     }
+    return false;
   }
   els.pasteBtn.addEventListener('click', tryClipboardRead);
   document.addEventListener('paste', (e) => {
@@ -575,11 +618,28 @@
       if (it.kind === 'file' && it.type.startsWith('image/')) {
         e.preventDefault();
         const blob = it.getAsFile();
-        if (blob) useBlob(blob);
+        if (blob) {
+          useBlob(blob);
+          hidePasteOverlay();
+        }
         return;
       }
     }
   });
+
+  function showPasteOverlay(title) {
+    if (title) els.pasteOverlayTitle.textContent = title;
+    els.pasteOverlay.hidden = false;
+  }
+  function hidePasteOverlay() {
+    els.pasteOverlay.hidden = true;
+    els.pasteOverlayTitle.textContent = 'クリップボードから貼り付け';
+  }
+  els.pasteOverlayBtn.addEventListener('click', async () => {
+    await tryClipboardRead();
+    if (state.srcSource) hidePasteOverlay();
+  });
+  els.pasteOverlayClose.addEventListener('click', hidePasteOverlay);
 
   // ---------- Input: drag & drop ----------
   let dragDepth = 0;
@@ -797,7 +857,9 @@
   useImageSource(initialSrc, useCors ? { crossOrigin: 'anonymous' } : {})
     .then(() => {
       if (params.get('capture') === '1') openCamera();
-      if (params.get('paste') === '1') setStatus('Cmd/Ctrl+V で画像をペースト');
+      if (params.get('paste') === '1') {
+        showPasteOverlay('クリップボードから貼り付け');
+      }
     });
 })();
 </script>
