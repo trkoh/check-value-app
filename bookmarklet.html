@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ブックマークレット設置 — ヴァルール確認</title>
+<style>
+  body { background:#1a1a1a; color:#ddd; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif; line-height:1.7; max-width:720px; margin:0 auto; padding:1.5rem; }
+  h1 { font-size:1.3rem; }
+  h2 { font-size:1.05rem; margin-top:2rem; color:#fff; }
+  a.bm {
+    display:inline-block; background:#356; color:#fff; padding:0.6rem 1.2rem;
+    border-radius:6px; text-decoration:none; font-weight:600; font-size:1.1rem;
+    border:1px solid #588; margin:0.5rem 0;
+  }
+  a.bm:hover { background:#467; }
+  code, pre { background:#111; color:#aaa; padding:0.1rem 0.35rem; border-radius:3px; font-size:0.9em; }
+  pre { padding:0.8rem; overflow:auto; white-space:pre-wrap; word-break:break-all; }
+  ol { padding-left:1.4rem; }
+  ol li { margin:0.4rem 0; }
+  .muted { color:#888; font-size:0.9rem; }
+  hr { border:none; border-top:1px solid #333; margin:1.5rem 0; }
+  a { color:#6af; }
+</style>
+</head>
+<body>
+
+<h1>ヴァルール確認ブックマークレット</h1>
+<p>下のボタンを、ブラウザのブックマークバーに <b>ドラッグ</b> してください。<br>
+以降は任意のWebページで、このブックマークをクリックすると、そのページで一番大きい画像のヴァルール変換結果が新規タブで開きます。</p>
+
+<a class="bm" href="javascript:(function()%7Bvar%20i%3DArray.from(document.images)%3Bif(!i.length)%7Balert('%E7%94%BB%E5%83%8F%E3%81%8C%E8%A6%8B%E3%81%A4%E3%81%8B%E3%82%8A%E3%81%BE%E3%81%9B%E3%82%93')%3Breturn%7Di.sort(function(a%2Cb)%7Breturn(b.naturalWidth*b.naturalHeight)-(a.naturalWidth*a.naturalHeight)%7D)%3Bvar%20u%3Di%5B0%5D.currentSrc%7C%7Ci%5B0%5D.src%3Bwindow.open('https%3A%2F%2Fodayakalife.dev%2Fcheck-value-app%2F%3Fimg%3D'%2BencodeURIComponent(u)%2C'_blank')%3B%7D)()">▶ ヴァルール確認</a>
+
+<p class="muted">クリックすると現ページに画像が無い旨のアラートが出るのは正常です（このページに `&lt;img&gt;` が無いため）。</p>
+
+<h2>ドラッグできない場合の手動設定</h2>
+<ol>
+  <li>任意のページをブックマークする（後でURLを書き換えるため、何でも良い）</li>
+  <li>ブックマークを編集 → 名前を「ヴァルール確認」に、URL を以下に置き換える</li>
+</ol>
+
+<pre id="src">javascript:(function(){var i=Array.from(document.images);if(!i.length){alert('画像が見つかりません');return}i.sort(function(a,b){return(b.naturalWidth*b.naturalHeight)-(a.naturalWidth*a.naturalHeight)});var u=i[0].currentSrc||i[0].src;window.open('https://odayakalife.dev/check-value-app/?img='+encodeURIComponent(u),'_blank')})()</pre>
+
+<p><button onclick="navigator.clipboard.writeText(document.getElementById('src').textContent).then(()=>{this.textContent='コピー済'})" style="background:#3a3a3a;color:#ddd;border:1px solid #555;padding:0.4rem 0.8rem;border-radius:4px;cursor:pointer;">↑をコピー</button></p>
+
+<h2>動作する条件 / しない条件</h2>
+<ul>
+  <li>✅ ページに <code>&lt;img&gt;</code> として埋め込まれた画像があれば拾える</li>
+  <li>❌ CSS の <code>background-image</code> で配置されている画像（Pinterest のグリッド画面など）は拾えない → 個別の画像詳細ページに飛んでから起動</li>
+  <li>❌ サイトの Content Security Policy (CSP) で <code>javascript:</code> URL がブロックされていると無効（X (Twitter) など）→ 画像を新規タブで開いてから起動するか、画像URLを手で <code>?img=</code> に渡す</li>
+  <li>⚠️ 渡された画像URLが CORS を許可していない場合、本ツール側で読込みが失敗する。サムネイル経由で済む場合は問題ないが、認証付き画像（要ログイン）は不可</li>
+</ul>
+
+<h2>このページの仕組み</h2>
+<p>ブックマークレットは <code>javascript:</code> スキームの URL。ブラウザは URL バーやブックマークから <code>javascript:</code> が呼ばれた時、現在ページの window context で JS を実行する。これは <a href="https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/javascript" target="_blank" rel="noopener">MDN: javascript: URLs</a> に仕様化された挙動。ブックマークバーへドラッグ可能なのは、HTML の <code>&lt;a href="javascript:..."&gt;</code> の標準的なドラッグ挙動による（HTML Living Standard, dragstart）。</p>
+
+<p><a href="./">← ヴァルール確認ツールに戻る</a></p>
+
+</body>
+</html>

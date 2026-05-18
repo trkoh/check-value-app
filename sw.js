@@ -1,7 +1,8 @@
-const CACHE = 'check-value-v1';
+const CACHE = 'check-value-v2';
 const ASSETS = [
   './',
   './index.html',
+  './bookmarklet.html',
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',
