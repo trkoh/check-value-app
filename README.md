@@ -51,7 +51,7 @@
 ### 配信導線（外部から1〜2タップで起動）
 詳細手順は [DELIVERY.md](./DELIVERY.md) 参照:
 - **S1 Mac画像**: macOS Quick Action（Finder右クリック → クリップボードへコピー → `?paste=1` で起動）
-- **S2 Web**: ブックマークレット（ページ最大の `<img>` を `?img=` で渡す）
+- **S2 Web**: 画像を右クリック → 「画像をコピー」→ 本ツールで Cmd/Ctrl+V
 - **S3 屋外**: iOS Shortcut + Action Button（`?capture=1` でカメラ直結）
 
 ### 計画中
@@ -106,7 +106,7 @@
 | `sw.js` | Service Worker（オフラインキャッシュ） |
 | `icons/` | PWA / apple-touch アイコン |
 | `samples/` | テスト・デフォルト用画像 |
-| `DELIVERY.md` | 配信導線（ブックマークレット / iOS Shortcut / Mac Quick Action）手順 |
+| `DELIVERY.md` | 配信導線（右クリック&ペースト / iOS Shortcut / Mac Quick Action）手順 |
 | `RESEARCH.md` | アルゴリズム / 競合 / 配信機構の調査ログ（古い、要更新） |
 | `.devcontainer/` | 開発環境定義（Docker, firewall, Claude Code 設定） |
 
@@ -117,7 +117,7 @@ GitHub Issues で管理:
 - 🎯 [#5 プロジェクトトラッキング](https://github.com/trkoh/check-value-app/issues/5)
 - ✅ [#1 Phase 0: アルゴリズム比較検証](https://github.com/trkoh/check-value-app/issues/1) — BT.709 採用決定
 - ✅ [#2 Phase 1: PWA最小機能](https://github.com/trkoh/check-value-app/issues/2) — 実装済み（iPhone 実機検証は別途）
-- ✅ [#3 Phase 2: 配信導線](https://github.com/trkoh/check-value-app/issues/3) — ブックマークレット / 手順書（[DELIVERY.md](./DELIVERY.md)）
+- ✅ [#3 Phase 2: 配信導線](https://github.com/trkoh/check-value-app/issues/3) — 手順書（[DELIVERY.md](./DELIVERY.md)）
 - ✅ [#4 Phase 3: 差別化機能](https://github.com/trkoh/check-value-app/issues/4) — Share / Squint 実装（Color2Gray・SwiftUI は将来）
 - ✅ [#7 Reverse value picker](https://github.com/trkoh/check-value-app/issues/7) — Oklab パレットで実装
 - ⏸ [#6 サンプル画像コミット](https://github.com/trkoh/check-value-app/issues/6) — Procreate ground truth が手元になく保留
