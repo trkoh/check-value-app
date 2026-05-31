@@ -863,12 +863,28 @@
       return !!(navigator.canShare && navigator.canShare({ files: [dummy] }));
     } catch (e) { return false; }
   }
+  function buildCombinedCanvas() {
+    const sw = els.srcCanvas.width, sh = els.srcCanvas.height;
+    const ow = els.outCanvas.width, oh = els.outCanvas.height;
+    const h = Math.max(sh, oh);
+    const gap = 8;
+    const c = document.createElement('canvas');
+    c.width = sw + gap + ow;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(els.srcCanvas, 0, Math.floor((h - sh) / 2));
+    ctx.drawImage(els.outCanvas, sw + gap, Math.floor((h - oh) / 2));
+    return c;
+  }
   async function shareOutput() {
-    if (els.outCanvas.width === 0) {
+    if (els.outCanvas.width === 0 || els.srcCanvas.width === 0) {
       setStatus('出力画像がありません', true);
       return;
     }
-    const blob = await new Promise(r => els.outCanvas.toBlob(r, 'image/png'));
+    const combined = buildCombinedCanvas();
+    const blob = await new Promise(r => combined.toBlob(r, 'image/png'));
     if (!blob) { setStatus('画像化に失敗', true); return; }
     const file = new File([blob], 'value.png', { type: 'image/png' });
     if (canShareFiles()) {
