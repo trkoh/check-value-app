@@ -80,6 +80,30 @@
   figcaption { font-size: 0.85rem; color: #ccc; margin-bottom: 0.4rem; }
   canvas { width: 100%; height: auto; display: block; background: #000; border-radius: 3px; }
   canvas.pickable { cursor: crosshair; }
+  canvas.framing { cursor: crosshair; }
+
+  .canvas-wrap { position: relative; overflow: hidden; border-radius: 3px; }
+  .frame-overlay {
+    position: absolute; pointer-events: none;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+    outline: 2px dashed rgba(255, 255, 255, 0.9);
+    outline-offset: -1px;
+  }
+  .frame-overlay[hidden] { display: none; }
+
+  .analysis-row {
+    display: flex; align-items: center; gap: 0.6rem;
+    margin: 0.4rem 0; padding: 0.5rem; background: #232323; border-radius: 4px;
+  }
+  .analysis-label {
+    color: #ccc; font-size: 0.85rem; min-width: 6.5em;
+  }
+  .analysis-swatch {
+    width: 36px; height: 36px; border-radius: 4px; border: 1px solid #444;
+    flex-shrink: 0;
+  }
+  .analysis-bars { flex: 1; min-width: 0; }
+  .analysis-bars .bar-row { margin: 0.2rem 0; }
 
   .drop-overlay {
     position: fixed; inset: 0; background: rgba(50, 90, 130, 0.35);
@@ -280,21 +304,29 @@
 <div class="grid">
   <figure>
     <figcaption>入力 (カラー)</figcaption>
-    <canvas id="canvas-src"></canvas>
+    <div class="canvas-wrap">
+      <canvas id="canvas-src"></canvas>
+      <div class="frame-overlay" id="frame-overlay-src" hidden></div>
+    </div>
   </figure>
   <figure>
     <figcaption id="out-caption">出力（ヴァルール確認用）</figcaption>
-    <canvas id="canvas-out"></canvas>
+    <div class="canvas-wrap">
+      <canvas id="canvas-out"></canvas>
+      <div class="frame-overlay" id="frame-overlay-out" hidden></div>
+    </div>
   </figure>
 </div>
 
 <div class="panel">
   <h2>アクション</h2>
   <div class="row">
-    <button id="share-btn" type="button" title="処理済み画像をペイントアプリ等に送る">📤 共有 / 保存</button>
-    <button id="picker-btn" type="button" title="出力画像をクリック → そのヴァルールの色候補を表示">🎨 色を逆引き</button>
+    <button id="share-btn" type="button" title="元画像と処理済み画像を並べた1枚を保存/共有">📤 共有 / 保存</button>
+    <button id="picker-btn" type="button" title="ON にして画像をクリック。元画像→そのRGB/HSV、出力画像→同明度の色候補">🎨 色を拾う</button>
+    <button id="frame-btn" type="button" title="ON にして元画像をドラッグ → トリミング枠。枠外は薄暗くなり、下の分析もこの枠内で計算">🔲 トリミング枠</button>
+    <button id="frame-reset-btn" type="button" title="トリミング枠を消す">枠を解除</button>
     <span style="color: var(--muted); font-size: 0.8rem;">
-      「色を逆引き」を ON にして出力画像をクリック → 同じ明度の色候補（Oklab）
+      色を拾う: 元画像クリック=RGB/HSV / 出力クリック=同明度の色候補。トリミング枠: 元画像をドラッグ
     </span>
   </div>
   <div class="palette-panel" id="palette-panel" hidden>
@@ -321,6 +353,52 @@
         <span class="bar-label">明度 V</span>
         <div class="bar" id="bar-val"><div class="bar-marker" id="bar-val-marker"></div></div>
         <span class="bar-value" id="bar-val-value">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="analysis-panel" hidden>
+  <h2>分析（枠内 / 枠なし時は全体）</h2>
+  <div class="analysis-row">
+    <span class="analysis-label">最も明るい点</span>
+    <div class="analysis-swatch" id="analysis-bright-swatch"></div>
+    <div class="analysis-bars">
+      <div class="bar-row">
+        <span class="bar-label">色相 H</span>
+        <div class="bar hue"><div class="bar-marker" id="bright-h-marker"></div></div>
+        <span class="bar-value" id="bright-h-value">—</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">彩度 S</span>
+        <div class="bar" id="bright-s-bar"><div class="bar-marker" id="bright-s-marker"></div></div>
+        <span class="bar-value" id="bright-s-value">—</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">明度 V</span>
+        <div class="bar" id="bright-v-bar"><div class="bar-marker" id="bright-v-marker"></div></div>
+        <span class="bar-value" id="bright-v-value">—</span>
+      </div>
+    </div>
+  </div>
+  <div class="analysis-row">
+    <span class="analysis-label">最も暗い点</span>
+    <div class="analysis-swatch" id="analysis-dark-swatch"></div>
+    <div class="analysis-bars">
+      <div class="bar-row">
+        <span class="bar-label">色相 H</span>
+        <div class="bar hue"><div class="bar-marker" id="dark-h-marker"></div></div>
+        <span class="bar-value" id="dark-h-value">—</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">彩度 S</span>
+        <div class="bar" id="dark-s-bar"><div class="bar-marker" id="dark-s-marker"></div></div>
+        <span class="bar-value" id="dark-s-value">—</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-label">明度 V</span>
+        <div class="bar" id="dark-v-bar"><div class="bar-marker" id="dark-v-marker"></div></div>
+        <span class="bar-value" id="dark-v-value">—</span>
       </div>
     </div>
   </div>
@@ -562,6 +640,8 @@
     squint: 0,
     srcSource: null, // HTMLImageElement | HTMLCanvasElement (un-blurred)
     pickerOn: false,
+    frameMode: false,
+    frame: null, // normalized {x, y, w, h} in [0, 1] of src canvas, or null
   };
 
   const els = {
@@ -586,6 +666,29 @@
     pasteOverlayClose: document.getElementById('paste-overlay-close'),
     shareBtn: document.getElementById('share-btn'),
     pickerBtn: document.getElementById('picker-btn'),
+    frameBtn: document.getElementById('frame-btn'),
+    frameResetBtn: document.getElementById('frame-reset-btn'),
+    frameOverlaySrc: document.getElementById('frame-overlay-src'),
+    frameOverlayOut: document.getElementById('frame-overlay-out'),
+    analysisPanel: document.getElementById('analysis-panel'),
+    brightSwatch: document.getElementById('analysis-bright-swatch'),
+    brightHMarker: document.getElementById('bright-h-marker'),
+    brightHValue: document.getElementById('bright-h-value'),
+    brightSBar: document.getElementById('bright-s-bar'),
+    brightSMarker: document.getElementById('bright-s-marker'),
+    brightSValue: document.getElementById('bright-s-value'),
+    brightVBar: document.getElementById('bright-v-bar'),
+    brightVMarker: document.getElementById('bright-v-marker'),
+    brightVValue: document.getElementById('bright-v-value'),
+    darkSwatch: document.getElementById('analysis-dark-swatch'),
+    darkHMarker: document.getElementById('dark-h-marker'),
+    darkHValue: document.getElementById('dark-h-value'),
+    darkSBar: document.getElementById('dark-s-bar'),
+    darkSMarker: document.getElementById('dark-s-marker'),
+    darkSValue: document.getElementById('dark-s-value'),
+    darkVBar: document.getElementById('dark-v-bar'),
+    darkVMarker: document.getElementById('dark-v-marker'),
+    darkVValue: document.getElementById('dark-v-value'),
     palettePanel: document.getElementById('palette-panel'),
     paletteInfo: document.getElementById('palette-info'),
     paletteGrid: document.getElementById('palette-grid'),
@@ -649,6 +752,8 @@
     const ms = Math.round(performance.now() - t0);
     setStatus(`完了 (${w}×${h}px, ${ms}ms)`);
     updateOutCaption();
+    updateFrameOverlays();
+    updateAnalysis();
   }
 
   // ---------- Image loading ----------
@@ -666,6 +771,7 @@
     try {
       const img = await loadImage(src, opts.crossOrigin);
       state.srcSource = img;
+      state.frame = null;
       hidePalette();
       hidePasteOverlay();
       requestAnimationFrame(render);
@@ -821,6 +927,7 @@
     snap.height = v.videoHeight;
     snap.getContext('2d').drawImage(v, 0, 0);
     state.srcSource = snap;
+    state.frame = null;
     closeCamera();
     hidePalette();
     requestAnimationFrame(render);
@@ -994,25 +1101,182 @@
     els.palettePanel.hidden = false;
   }
   els.copyHexBtn.addEventListener('click', () => copySelectedHex());
-  function pickFromEvent(e) {
-    const rect = els.outCanvas.getBoundingClientRect();
-    const scaleX = els.outCanvas.width / rect.width;
-    const scaleY = els.outCanvas.height / rect.height;
-    const x = (e.clientX - rect.left) * scaleX;
-    const y = (e.clientY - rect.top) * scaleY;
+  function eventToCanvasXY(e, canvas) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  }
+  function pickFromOutEvent(e) {
+    const { x, y } = eventToCanvasXY(e, els.outCanvas);
     showPaletteAt(x, y);
+  }
+  function showColorFromSrc(canvasX, canvasY) {
+    const ctx = els.srcCanvas.getContext('2d');
+    const cx = Math.max(0, Math.min(els.srcCanvas.width - 1, Math.round(canvasX)));
+    const cy = Math.max(0, Math.min(els.srcCanvas.height - 1, Math.round(canvasY)));
+    const px = ctx.getImageData(cx, cy, 1, 1).data;
+    const R = px[0], G = px[1], B = px[2];
+    els.paletteInfo.innerHTML = `
+      <span>クリック位置の色: <code>${rgbToHex(R, G, B)}</code></span>
+      <span style="color: var(--muted)">元画像のRGB / HSV を表示</span>
+    `;
+    els.paletteGrid.innerHTML = '';
+    selectSwatchByColor(R, G, B);
+    els.palettePanel.hidden = false;
   }
   els.outCanvas.addEventListener('click', (e) => {
     if (!state.pickerOn) return;
-    pickFromEvent(e);
+    pickFromOutEvent(e);
+  });
+  els.srcCanvas.addEventListener('click', (e) => {
+    if (!state.pickerOn || state.frameMode) return;
+    const { x, y } = eventToCanvasXY(e, els.srcCanvas);
+    showColorFromSrc(x, y);
   });
   els.pickerBtn.addEventListener('click', () => {
     state.pickerOn = !state.pickerOn;
     els.pickerBtn.classList.toggle('toggle-on', state.pickerOn);
     els.outCanvas.classList.toggle('pickable', state.pickerOn);
+    els.srcCanvas.classList.toggle('pickable', state.pickerOn && !state.frameMode);
     if (!state.pickerOn) hidePalette();
-    else setStatus('出力画像をクリックしてヴァルールに合う色候補を表示');
+    else setStatus('元画像クリック=RGB/HSV、出力画像クリック=同明度の色候補');
   });
+
+  // ---------- Frame (trim/reframe) ----------
+  function updateFrameOverlays() {
+    const f = state.frame;
+    if (!f || f.w <= 0 || f.h <= 0) {
+      els.frameOverlaySrc.hidden = true;
+      els.frameOverlayOut.hidden = true;
+      return;
+    }
+    for (const el of [els.frameOverlaySrc, els.frameOverlayOut]) {
+      el.style.left = (f.x * 100).toFixed(3) + '%';
+      el.style.top = (f.y * 100).toFixed(3) + '%';
+      el.style.width = (f.w * 100).toFixed(3) + '%';
+      el.style.height = (f.h * 100).toFixed(3) + '%';
+      el.hidden = false;
+    }
+  }
+
+  let frameDrag = null;
+  function frameStart(clientX, clientY) {
+    const rect = els.srcCanvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    frameDrag = { sx: x, sy: y };
+    state.frame = { x, y, w: 0, h: 0 };
+    updateFrameOverlays();
+  }
+  function frameMove(clientX, clientY) {
+    if (!frameDrag) return;
+    const rect = els.srcCanvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+    const x0 = Math.min(frameDrag.sx, x);
+    const y0 = Math.min(frameDrag.sy, y);
+    state.frame = {
+      x: x0, y: y0,
+      w: Math.abs(x - frameDrag.sx),
+      h: Math.abs(y - frameDrag.sy),
+    };
+    updateFrameOverlays();
+  }
+  function frameEnd() {
+    if (!frameDrag) return;
+    frameDrag = null;
+    if (state.frame && (state.frame.w < 0.01 || state.frame.h < 0.01)) {
+      state.frame = null;
+      updateFrameOverlays();
+    }
+    updateAnalysis();
+  }
+  els.srcCanvas.addEventListener('mousedown', (e) => {
+    if (!state.frameMode) return;
+    e.preventDefault();
+    frameStart(e.clientX, e.clientY);
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!frameDrag) return;
+    frameMove(e.clientX, e.clientY);
+  });
+  window.addEventListener('mouseup', () => { if (frameDrag) frameEnd(); });
+  els.srcCanvas.addEventListener('touchstart', (e) => {
+    if (!state.frameMode) return;
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    frameStart(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: false });
+  els.srcCanvas.addEventListener('touchmove', (e) => {
+    if (!frameDrag) return;
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    frameMove(e.touches[0].clientX, e.touches[0].clientY);
+  }, { passive: false });
+  els.srcCanvas.addEventListener('touchend', () => { if (frameDrag) frameEnd(); });
+  els.frameBtn.addEventListener('click', () => {
+    state.frameMode = !state.frameMode;
+    els.frameBtn.classList.toggle('toggle-on', state.frameMode);
+    els.srcCanvas.classList.toggle('framing', state.frameMode);
+    els.srcCanvas.classList.toggle('pickable', state.pickerOn && !state.frameMode);
+    if (state.frameMode) setStatus('元画像をドラッグしてトリミング枠を設定');
+  });
+  els.frameResetBtn.addEventListener('click', () => {
+    state.frame = null;
+    updateFrameOverlays();
+    updateAnalysis();
+  });
+
+  // ---------- Analysis (brightest / darkest within frame) ----------
+  function setAnalysisRow(prefix, R, G, B) {
+    const hex = rgbToHex(R, G, B);
+    const { h, s, v } = rgbToHsv(R, G, B);
+    els[prefix + 'Swatch'].style.background = hex;
+    els[prefix + 'HMarker'].style.left = (h / 360 * 100).toFixed(2) + '%';
+    els[prefix + 'HValue'].textContent = Math.round(h) + '°';
+    els[prefix + 'SBar'].style.background =
+      'linear-gradient(to right, ' + hsvToHex(h, 0, v) + ', ' + hsvToHex(h, 100, v) + ')';
+    els[prefix + 'SMarker'].style.left = s.toFixed(2) + '%';
+    els[prefix + 'SValue'].textContent = Math.round(s);
+    els[prefix + 'VBar'].style.background =
+      'linear-gradient(to right, ' + hsvToHex(h, s, 0) + ', ' + hsvToHex(h, s, 100) + ')';
+    els[prefix + 'VMarker'].style.left = v.toFixed(2) + '%';
+    els[prefix + 'VValue'].textContent = Math.round(v);
+  }
+  function updateAnalysis() {
+    if (!state.srcSource || els.srcCanvas.width === 0) {
+      els.analysisPanel.hidden = true;
+      return;
+    }
+    const ctx = els.srcCanvas.getContext('2d');
+    const W = els.srcCanvas.width, H = els.srcCanvas.height;
+    const f = state.frame;
+    let rx = 0, ry = 0, rw = W, rh = H;
+    if (f && f.w > 0 && f.h > 0) {
+      rx = Math.max(0, Math.floor(f.x * W));
+      ry = Math.max(0, Math.floor(f.y * H));
+      rw = Math.max(1, Math.floor(f.w * W));
+      rh = Math.max(1, Math.floor(f.h * H));
+      if (rx + rw > W) rw = W - rx;
+      if (ry + rh > H) rh = H - ry;
+    }
+    const data = ctx.getImageData(rx, ry, rw, rh).data;
+    let maxV = -1, minV = 1e9;
+    let mR = 0, mG = 0, mB = 0, nR = 0, nG = 0, nB = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const v = Math.max(r, g, b);
+      if (v > maxV) { maxV = v; mR = r; mG = g; mB = b; }
+      if (v < minV) { minV = v; nR = r; nG = g; nB = b; }
+    }
+    setAnalysisRow('bright', mR, mG, mB);
+    setAnalysisRow('dark', nR, nG, nB);
+    els.analysisPanel.hidden = false;
+  }
 
   // ---------- URL params ----------
   const params = new URLSearchParams(location.search);
