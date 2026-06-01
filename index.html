@@ -323,6 +323,19 @@
   </div>
 </div>
 
+<div class="panel">
+  <h2>アクション</h2>
+  <div class="row">
+    <button id="share-btn" type="button" title="元画像と処理済み画像を並べた1枚を保存/共有">📤 共有 / 保存</button>
+    <button id="picker-btn" type="button" title="ON にして画像をクリック。元画像→そのRGB/HSV、出力画像→明度＋同明度の色候補">🎨 色を拾う</button>
+    <button id="frame-btn" type="button" title="ON にして元画像をドラッグ → トリミング枠。枠外は薄暗くなり、下の分析もこの枠内で計算">🔲 トリミング枠</button>
+    <button id="frame-reset-btn" type="button" title="トリミング枠を消す">枠を解除</button>
+    <span style="color: var(--muted); font-size: 0.8rem;">
+      色を拾う: 各画像クリック→HSVオーバーレイ。出力は下に同明度の色候補も。トリミング枠: 元画像ドラッグ
+    </span>
+  </div>
+</div>
+
 <div class="grid">
   <figure>
     <figcaption>入力 (カラー)</figcaption>
@@ -359,22 +372,36 @@
     <div class="canvas-wrap">
       <canvas id="canvas-out"></canvas>
       <div class="frame-overlay" id="frame-overlay-out" hidden></div>
+      <div class="src-hsv-overlay" id="out-hsv-overlay" hidden>
+        <div class="selected-row">
+          <div class="selected-swatch-large" id="out-selected-swatch"></div>
+          <div class="selected-hex" id="out-selected-hex">—</div>
+          <button id="out-copy-hex-btn" type="button" style="padding:0.15rem 0.45rem; font-size:0.75rem;">HEXコピー</button>
+          <button id="out-ov-close" type="button" class="ov-close" title="閉じる">×</button>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">色相 H</span>
+          <div class="bar hue"><div class="bar-marker" id="out-bar-hue-marker"></div></div>
+          <span class="bar-value" id="out-bar-hue-value">—</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">彩度 S</span>
+          <div class="bar" id="out-bar-sat"><div class="bar-marker" id="out-bar-sat-marker"></div></div>
+          <span class="bar-value" id="out-bar-sat-value">—</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">明度 V</span>
+          <div class="bar" id="out-bar-val"><div class="bar-marker" id="out-bar-val-marker"></div></div>
+          <span class="bar-value" id="out-bar-val-value">—</span>
+        </div>
+      </div>
     </div>
   </figure>
 </div>
 
-<div class="panel">
-  <h2>アクション</h2>
-  <div class="row">
-    <button id="share-btn" type="button" title="元画像と処理済み画像を並べた1枚を保存/共有">📤 共有 / 保存</button>
-    <button id="picker-btn" type="button" title="ON にして画像をクリック。元画像→そのRGB/HSV、出力画像→同明度の色候補">🎨 色を拾う</button>
-    <button id="frame-btn" type="button" title="ON にして元画像をドラッグ → トリミング枠。枠外は薄暗くなり、下の分析もこの枠内で計算">🔲 トリミング枠</button>
-    <button id="frame-reset-btn" type="button" title="トリミング枠を消す">枠を解除</button>
-    <span style="color: var(--muted); font-size: 0.8rem;">
-      色を拾う: 元画像クリック=RGB/HSV / 出力クリック=同明度の色候補。トリミング枠: 元画像をドラッグ
-    </span>
-  </div>
-  <div class="palette-panel" id="palette-panel" hidden>
+<div class="panel" id="palette-panel-wrap" hidden>
+  <h2>同明度の色候補（Oklab）</h2>
+  <div class="palette-panel" id="palette-panel">
     <div class="palette-info" id="palette-info"></div>
     <div class="palette-grid" id="palette-grid"></div>
     <div class="palette-detail" id="palette-detail">
@@ -748,6 +775,20 @@
     darkVMarker: document.getElementById('dark-v-marker'),
     darkVValue: document.getElementById('dark-v-value'),
     palettePanel: document.getElementById('palette-panel'),
+    palettePanelWrap: document.getElementById('palette-panel-wrap'),
+    outHsvOverlay: document.getElementById('out-hsv-overlay'),
+    outSelectedSwatch: document.getElementById('out-selected-swatch'),
+    outSelectedHex: document.getElementById('out-selected-hex'),
+    outCopyHexBtn: document.getElementById('out-copy-hex-btn'),
+    outOvClose: document.getElementById('out-ov-close'),
+    outBarHueMarker: document.getElementById('out-bar-hue-marker'),
+    outBarHueValue: document.getElementById('out-bar-hue-value'),
+    outBarSat: document.getElementById('out-bar-sat'),
+    outBarSatMarker: document.getElementById('out-bar-sat-marker'),
+    outBarSatValue: document.getElementById('out-bar-sat-value'),
+    outBarVal: document.getElementById('out-bar-val'),
+    outBarValMarker: document.getElementById('out-bar-val-marker'),
+    outBarValValue: document.getElementById('out-bar-val-value'),
     paletteInfo: document.getElementById('palette-info'),
     paletteGrid: document.getElementById('palette-grid'),
     paletteDetail: document.getElementById('palette-detail'),
@@ -928,6 +969,7 @@
       state.frame = null;
       hidePalette();
       els.srcHsvOverlay.hidden = true;
+      els.outHsvOverlay.hidden = true;
       hidePasteOverlay();
       requestAnimationFrame(render);
     } catch (e) {
@@ -1085,6 +1127,8 @@
     state.frame = null;
     closeCamera();
     hidePalette();
+    els.srcHsvOverlay.hidden = true;
+    els.outHsvOverlay.hidden = true;
     requestAnimationFrame(render);
   }
   els.cameraBtn.addEventListener('click', openCamera);
@@ -1171,7 +1215,7 @@
 
   // ---------- Reverse value picker ----------
   function hidePalette() {
-    els.palettePanel.hidden = true;
+    els.palettePanelWrap.hidden = true;
     els.paletteGrid.innerHTML = '';
     els.paletteInfo.innerHTML = '';
     els.paletteDetail.classList.remove('open');
@@ -1253,7 +1297,7 @@
         selectSwatchByColor(s.R, s.G, s.B, div);
       }
     });
-    els.palettePanel.hidden = false;
+    els.palettePanelWrap.hidden = false;
   }
   els.copyHexBtn.addEventListener('click', () => copySelectedHex());
   function eventToCanvasXY(e, canvas) {
@@ -1305,9 +1349,48 @@
   els.srcOvClose.addEventListener('click', () => {
     els.srcHsvOverlay.hidden = true;
   });
+
+  let outSelectedHex = null;
+  function showColorFromOut(canvasX, canvasY) {
+    const ctx = els.outCanvas.getContext('2d');
+    const cx = Math.max(0, Math.min(els.outCanvas.width - 1, Math.round(canvasX)));
+    const cy = Math.max(0, Math.min(els.outCanvas.height - 1, Math.round(canvasY)));
+    const px = ctx.getImageData(cx, cy, 1, 1).data;
+    const R = px[0], G = px[1], B = px[2];
+    const hex = rgbToHex(R, G, B);
+    const { h, s, v } = rgbToHsv(R, G, B);
+    outSelectedHex = hex;
+    els.outSelectedSwatch.style.background = hex;
+    els.outSelectedHex.textContent = hex;
+    els.outBarHueMarker.style.left = (h / 360 * 100).toFixed(2) + '%';
+    els.outBarHueValue.textContent = Math.round(h) + '°';
+    els.outBarSat.style.background =
+      'linear-gradient(to right, ' + hsvToHex(h, 0, v) + ', ' + hsvToHex(h, 100, v) + ')';
+    els.outBarSatMarker.style.left = s.toFixed(2) + '%';
+    els.outBarSatValue.textContent = Math.round(s);
+    els.outBarVal.style.background =
+      'linear-gradient(to right, ' + hsvToHex(h, s, 0) + ', ' + hsvToHex(h, s, 100) + ')';
+    els.outBarValMarker.style.left = v.toFixed(2) + '%';
+    els.outBarValValue.textContent = Math.round(v);
+    els.outHsvOverlay.hidden = false;
+  }
+  els.outCopyHexBtn.addEventListener('click', async () => {
+    if (!outSelectedHex) return;
+    try {
+      await navigator.clipboard.writeText(outSelectedHex);
+      const t = els.outCopyHexBtn.textContent;
+      els.outCopyHexBtn.textContent = 'コピー済';
+      setTimeout(() => { els.outCopyHexBtn.textContent = t; }, 700);
+    } catch (e) { setStatus('クリップボードへの書き込みに失敗', true); }
+  });
+  els.outOvClose.addEventListener('click', () => {
+    els.outHsvOverlay.hidden = true;
+  });
   els.outCanvas.addEventListener('click', (e) => {
     if (!state.pickerOn) return;
-    pickFromOutEvent(e);
+    const { x, y } = eventToCanvasXY(e, els.outCanvas);
+    showColorFromOut(x, y);
+    showPaletteAt(x, y);
   });
   els.srcCanvas.addEventListener('click', (e) => {
     if (!state.pickerOn || state.frameMode) return;
@@ -1322,8 +1405,9 @@
     if (!state.pickerOn) {
       hidePalette();
       els.srcHsvOverlay.hidden = true;
+      els.outHsvOverlay.hidden = true;
     } else {
-      setStatus('元画像クリック=RGB/HSV、出力画像クリック=同明度の色候補');
+      setStatus('元画像クリック=その色のHSV / 出力画像クリック=HSV + 同明度の色候補');
     }
   });
 
