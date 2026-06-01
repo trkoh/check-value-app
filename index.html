@@ -91,6 +91,28 @@
   }
   .frame-overlay[hidden] { display: none; }
 
+  .src-hsv-overlay {
+    position: absolute; left: 0.4rem; right: 0.4rem; bottom: 0.4rem;
+    background: rgba(0, 0, 0, 0.78);
+    padding: 0.4rem 0.55rem; border-radius: 5px;
+    font-size: 0.78rem; z-index: 10;
+    backdrop-filter: blur(4px);
+  }
+  .src-hsv-overlay[hidden] { display: none; }
+  .src-hsv-overlay .selected-row { margin-bottom: 0.3rem; gap: 0.4rem; }
+  .src-hsv-overlay .selected-swatch-large { width: 28px; height: 28px; }
+  .src-hsv-overlay .selected-hex { font-size: 0.9rem; }
+  .src-hsv-overlay .bar-row { margin: 0.22rem 0; }
+  .src-hsv-overlay .bar-label { min-width: 3.4em; font-size: 0.78rem; }
+  .src-hsv-overlay .bar { height: 14px; }
+  .src-hsv-overlay .bar-value { font-size: 0.78rem; min-width: 2.5em; }
+  .src-hsv-overlay .ov-close {
+    background: transparent; border: 1px solid #555; color: #ccc;
+    padding: 0.1rem 0.45rem; font-size: 0.85rem; border-radius: 3px;
+    cursor: pointer;
+  }
+  .src-hsv-overlay .ov-close:hover { background: #333; }
+
   .analysis-row {
     display: flex; align-items: center; gap: 0.6rem;
     margin: 0.4rem 0; padding: 0.5rem; background: #232323; border-radius: 4px;
@@ -307,6 +329,29 @@
     <div class="canvas-wrap">
       <canvas id="canvas-src"></canvas>
       <div class="frame-overlay" id="frame-overlay-src" hidden></div>
+      <div class="src-hsv-overlay" id="src-hsv-overlay" hidden>
+        <div class="selected-row">
+          <div class="selected-swatch-large" id="src-selected-swatch"></div>
+          <div class="selected-hex" id="src-selected-hex">—</div>
+          <button id="src-copy-hex-btn" type="button" style="padding:0.15rem 0.45rem; font-size:0.75rem;">HEXコピー</button>
+          <button id="src-ov-close" type="button" class="ov-close" title="閉じる">×</button>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">色相 H</span>
+          <div class="bar hue"><div class="bar-marker" id="src-bar-hue-marker"></div></div>
+          <span class="bar-value" id="src-bar-hue-value">—</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">彩度 S</span>
+          <div class="bar" id="src-bar-sat"><div class="bar-marker" id="src-bar-sat-marker"></div></div>
+          <span class="bar-value" id="src-bar-sat-value">—</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">明度 V</span>
+          <div class="bar" id="src-bar-val"><div class="bar-marker" id="src-bar-val-marker"></div></div>
+          <span class="bar-value" id="src-bar-val-value">—</span>
+        </div>
+      </div>
     </div>
   </figure>
   <figure>
@@ -670,6 +715,19 @@
     frameResetBtn: document.getElementById('frame-reset-btn'),
     frameOverlaySrc: document.getElementById('frame-overlay-src'),
     frameOverlayOut: document.getElementById('frame-overlay-out'),
+    srcHsvOverlay: document.getElementById('src-hsv-overlay'),
+    srcSelectedSwatch: document.getElementById('src-selected-swatch'),
+    srcSelectedHex: document.getElementById('src-selected-hex'),
+    srcCopyHexBtn: document.getElementById('src-copy-hex-btn'),
+    srcOvClose: document.getElementById('src-ov-close'),
+    srcBarHueMarker: document.getElementById('src-bar-hue-marker'),
+    srcBarHueValue: document.getElementById('src-bar-hue-value'),
+    srcBarSat: document.getElementById('src-bar-sat'),
+    srcBarSatMarker: document.getElementById('src-bar-sat-marker'),
+    srcBarSatValue: document.getElementById('src-bar-sat-value'),
+    srcBarVal: document.getElementById('src-bar-val'),
+    srcBarValMarker: document.getElementById('src-bar-val-marker'),
+    srcBarValValue: document.getElementById('src-bar-val-value'),
     analysisPanel: document.getElementById('analysis-panel'),
     brightSwatch: document.getElementById('analysis-bright-swatch'),
     brightHMarker: document.getElementById('bright-h-marker'),
@@ -730,6 +788,92 @@
     return fitDims(w, h, PROC_MAX);
   }
 
+  // Feature-detect: does ctx.filter actually blur pixels?
+  // Some browsers/builds report ctx.filter as settable but drawImage ignores it.
+  const NATIVE_CANVAS_BLUR_OK = (() => {
+    try {
+      const a = document.createElement('canvas');
+      a.width = 8; a.height = 8;
+      const actx = a.getContext('2d');
+      actx.fillStyle = '#000'; actx.fillRect(0, 0, 8, 8);
+      actx.fillStyle = '#fff'; actx.fillRect(0, 0, 4, 8);
+      const b = document.createElement('canvas');
+      b.width = 8; b.height = 8;
+      const bctx = b.getContext('2d');
+      if (!('filter' in bctx)) return false;
+      bctx.filter = 'blur(3px)';
+      bctx.drawImage(a, 0, 0);
+      const px = bctx.getImageData(0, 0, 8, 8).data;
+      // top-left should bleed black into the white; pure white means filter ignored
+      return px[0] < 245;
+    } catch (e) { return false; }
+  })();
+
+  // Single-pass separable box blur with sliding window. Edge-clamped.
+  function boxBlurInPlace(data, w, h, r) {
+    if (r < 1) return;
+    const tmp = new Uint8ClampedArray(data.length);
+    // Horizontal pass: data -> tmp
+    for (let y = 0; y < h; y++) {
+      const row = y * w * 4;
+      let sr = 0, sg = 0, sb = 0, sa = 0, count = 0;
+      const initEnd = Math.min(r, w - 1);
+      for (let x = 0; x <= initEnd; x++) {
+        const i = row + x * 4;
+        sr += data[i]; sg += data[i+1]; sb += data[i+2]; sa += data[i+3];
+        count++;
+      }
+      for (let x = 0; x < w; x++) {
+        const o = row + x * 4;
+        tmp[o]   = sr / count;
+        tmp[o+1] = sg / count;
+        tmp[o+2] = sb / count;
+        tmp[o+3] = sa / count;
+        const xAdd = x + r + 1;
+        if (xAdd < w) {
+          const i = row + xAdd * 4;
+          sr += data[i]; sg += data[i+1]; sb += data[i+2]; sa += data[i+3];
+          count++;
+        }
+        const xRem = x - r;
+        if (xRem >= 0) {
+          const i = row + xRem * 4;
+          sr -= data[i]; sg -= data[i+1]; sb -= data[i+2]; sa -= data[i+3];
+          count--;
+        }
+      }
+    }
+    // Vertical pass: tmp -> data
+    for (let x = 0; x < w; x++) {
+      let sr = 0, sg = 0, sb = 0, sa = 0, count = 0;
+      const initEnd = Math.min(r, h - 1);
+      for (let y = 0; y <= initEnd; y++) {
+        const i = (y * w + x) * 4;
+        sr += tmp[i]; sg += tmp[i+1]; sb += tmp[i+2]; sa += tmp[i+3];
+        count++;
+      }
+      for (let y = 0; y < h; y++) {
+        const o = (y * w + x) * 4;
+        data[o]   = sr / count;
+        data[o+1] = sg / count;
+        data[o+2] = sb / count;
+        data[o+3] = sa / count;
+        const yAdd = y + r + 1;
+        if (yAdd < h) {
+          const i = (yAdd * w + x) * 4;
+          sr += tmp[i]; sg += tmp[i+1]; sb += tmp[i+2]; sa += tmp[i+3];
+          count++;
+        }
+        const yRem = y - r;
+        if (yRem >= 0) {
+          const i = (yRem * w + x) * 4;
+          sr -= tmp[i]; sg -= tmp[i+1]; sb -= tmp[i+2]; sa -= tmp[i+3];
+          count--;
+        }
+      }
+    }
+  }
+
   function render() {
     if (!state.srcSource) return;
     const dims = srcDims();
@@ -739,10 +883,20 @@
     const srcCtx = els.srcCanvas.getContext('2d');
     els.srcCanvas.width = w;
     els.srcCanvas.height = h;
-    srcCtx.filter = state.squint > 0 ? `blur(${state.squint}px)` : 'none';
-    srcCtx.drawImage(state.srcSource, 0, 0, w, h);
-    srcCtx.filter = 'none';
+    if (state.squint > 0 && NATIVE_CANVAS_BLUR_OK) {
+      srcCtx.filter = `blur(${state.squint}px)`;
+      srcCtx.drawImage(state.srcSource, 0, 0, w, h);
+      srcCtx.filter = 'none';
+    } else {
+      srcCtx.drawImage(state.srcSource, 0, 0, w, h);
+    }
     const srcData = srcCtx.getImageData(0, 0, w, h);
+    if (state.squint > 0 && !NATIVE_CANVAS_BLUR_OK) {
+      // 2 passes ≈ better Gaussian approximation
+      boxBlurInPlace(srcData.data, w, h, state.squint);
+      boxBlurInPlace(srcData.data, w, h, state.squint);
+      srcCtx.putImageData(srcData, 0, 0);
+    }
 
     const outData = processImageData(srcData, state);
     els.outCanvas.width = w;
@@ -773,6 +927,7 @@
       state.srcSource = img;
       state.frame = null;
       hidePalette();
+      els.srcHsvOverlay.hidden = true;
       hidePasteOverlay();
       requestAnimationFrame(render);
     } catch (e) {
@@ -1114,20 +1269,42 @@
     const { x, y } = eventToCanvasXY(e, els.outCanvas);
     showPaletteAt(x, y);
   }
+  let srcSelectedHex = null;
   function showColorFromSrc(canvasX, canvasY) {
     const ctx = els.srcCanvas.getContext('2d');
     const cx = Math.max(0, Math.min(els.srcCanvas.width - 1, Math.round(canvasX)));
     const cy = Math.max(0, Math.min(els.srcCanvas.height - 1, Math.round(canvasY)));
     const px = ctx.getImageData(cx, cy, 1, 1).data;
     const R = px[0], G = px[1], B = px[2];
-    els.paletteInfo.innerHTML = `
-      <span>クリック位置の色: <code>${rgbToHex(R, G, B)}</code></span>
-      <span style="color: var(--muted)">元画像のRGB / HSV を表示</span>
-    `;
-    els.paletteGrid.innerHTML = '';
-    selectSwatchByColor(R, G, B);
-    els.palettePanel.hidden = false;
+    const hex = rgbToHex(R, G, B);
+    const { h, s, v } = rgbToHsv(R, G, B);
+    srcSelectedHex = hex;
+    els.srcSelectedSwatch.style.background = hex;
+    els.srcSelectedHex.textContent = hex;
+    els.srcBarHueMarker.style.left = (h / 360 * 100).toFixed(2) + '%';
+    els.srcBarHueValue.textContent = Math.round(h) + '°';
+    els.srcBarSat.style.background =
+      'linear-gradient(to right, ' + hsvToHex(h, 0, v) + ', ' + hsvToHex(h, 100, v) + ')';
+    els.srcBarSatMarker.style.left = s.toFixed(2) + '%';
+    els.srcBarSatValue.textContent = Math.round(s);
+    els.srcBarVal.style.background =
+      'linear-gradient(to right, ' + hsvToHex(h, s, 0) + ', ' + hsvToHex(h, s, 100) + ')';
+    els.srcBarValMarker.style.left = v.toFixed(2) + '%';
+    els.srcBarValValue.textContent = Math.round(v);
+    els.srcHsvOverlay.hidden = false;
   }
+  els.srcCopyHexBtn.addEventListener('click', async () => {
+    if (!srcSelectedHex) return;
+    try {
+      await navigator.clipboard.writeText(srcSelectedHex);
+      const t = els.srcCopyHexBtn.textContent;
+      els.srcCopyHexBtn.textContent = 'コピー済';
+      setTimeout(() => { els.srcCopyHexBtn.textContent = t; }, 700);
+    } catch (e) { setStatus('クリップボードへの書き込みに失敗', true); }
+  });
+  els.srcOvClose.addEventListener('click', () => {
+    els.srcHsvOverlay.hidden = true;
+  });
   els.outCanvas.addEventListener('click', (e) => {
     if (!state.pickerOn) return;
     pickFromOutEvent(e);
@@ -1142,8 +1319,12 @@
     els.pickerBtn.classList.toggle('toggle-on', state.pickerOn);
     els.outCanvas.classList.toggle('pickable', state.pickerOn);
     els.srcCanvas.classList.toggle('pickable', state.pickerOn && !state.frameMode);
-    if (!state.pickerOn) hidePalette();
-    else setStatus('元画像クリック=RGB/HSV、出力画像クリック=同明度の色候補');
+    if (!state.pickerOn) {
+      hidePalette();
+      els.srcHsvOverlay.hidden = true;
+    } else {
+      setStatus('元画像クリック=RGB/HSV、出力画像クリック=同明度の色候補');
+    }
   });
 
   // ---------- Frame (trim/reframe) ----------
