@@ -1832,12 +1832,18 @@
     let items = [];
     try { items = await historyGetAll(); } catch { items = []; }
     els.historyStrip.innerHTML = '';
-    if (items.length === 0) { els.historyStrip.hidden = true; return; }
     els.historyStrip.hidden = false;
     const label = document.createElement('span');
     label.className = 'history-label';
     label.textContent = `最近の画像 (${items.length}/${HISTORY_MAX}):`;
     els.historyStrip.appendChild(label);
+    if (items.length === 0) {
+      const empty = document.createElement('span');
+      empty.style.cssText = 'color:var(--muted); font-size:0.8rem;';
+      empty.textContent = '— 履歴なし。ペースト/ファイル/カメラ/D&D で読込むとここに最大5枚並ぶ';
+      els.historyStrip.appendChild(empty);
+      return;
+    }
     for (const item of items) {
       const div = document.createElement('div');
       div.className = 'history-item' + (item.id === activeHistoryId ? ' active' : '');
