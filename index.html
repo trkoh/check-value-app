@@ -1070,9 +1070,9 @@
       hidePasteOverlay();
       requestAnimationFrame(render);
       if (!opts.skipHistory) {
-        saveToHistory(img);
+        await saveToHistory(img);
       } else {
-        renderHistoryStrip();
+        await renderHistoryStrip();
       }
     } catch (e) {
       const isRemote = /^https?:/i.test(src);
@@ -1754,9 +1754,12 @@
     const db = await openHistoryDB();
     return new Promise((res, rej) => {
       const tx = db.transaction(HISTORY_STORE, 'readwrite');
+      let newId = null;
       const req = tx.objectStore(HISTORY_STORE).add(item);
-      req.onsuccess = () => res(req.result);
-      tx.onerror = () => rej(tx.error);
+      req.onsuccess = () => { newId = req.result; };
+      tx.oncomplete = () => res(newId);
+      tx.onerror = () => rej(tx.error || new Error('historyAdd tx failed'));
+      tx.onabort = () => rej(tx.error || new Error('historyAdd tx aborted'));
     });
   }
   async function historyGetAll() {
@@ -1796,24 +1799,37 @@
     try {
       const W = source.naturalWidth || source.videoWidth || source.width;
       const H = source.naturalHeight || source.videoHeight || source.height;
-      if (!W || !H) return;
+      if (!W || !H) {
+        setStatus('履歴保存スキップ: 画像サイズが取得できません', true);
+        return;
+      }
       const dims = fitDims(W, H, PROC_MAX);
       const c = document.createElement('canvas');
       c.width = dims.w; c.height = dims.h;
       c.getContext('2d').drawImage(source, 0, 0, dims.w, dims.h);
       const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
-      if (!blob) return;
+      if (!blob) {
+        setStatus('履歴保存失敗: toBlob が null（CORSで汚染された可能性）', true);
+        return;
+      }
       const td = fitDims(dims.w, dims.h, 120);
       const thumb = document.createElement('canvas');
       thumb.width = td.w; thumb.height = td.h;
       thumb.getContext('2d').drawImage(c, 0, 0, td.w, td.h);
-      const thumbUrl = thumb.toDataURL('image/jpeg', 0.7);
+      let thumbUrl;
+      try {
+        thumbUrl = thumb.toDataURL('image/jpeg', 0.7);
+      } catch (e) {
+        setStatus('履歴保存失敗: サムネ生成エラー ' + e.message, true);
+        return;
+      }
       const id = await historyAdd({ ts: Date.now(), blob, thumbUrl });
       activeHistoryId = id;
       await historyTrim(HISTORY_MAX);
       await renderHistoryStrip();
     } catch (e) {
-      console.warn('history save failed', e);
+      console.error('history save failed', e);
+      setStatus('履歴保存失敗: ' + (e && e.message ? e.message : e), true);
     }
   }
 
