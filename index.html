@@ -134,6 +134,40 @@
     font-family: monospace;
   }
 
+  .history-strip {
+    display: flex; align-items: center; gap: 0.5rem;
+    flex-wrap: wrap; margin-top: 0.5rem;
+  }
+  .history-strip[hidden] { display: none; }
+  .history-label {
+    font-size: 0.8rem; color: var(--muted); margin-right: 0.2rem;
+  }
+  .history-item {
+    position: relative; width: 60px; height: 60px;
+    border: 1px solid #444; border-radius: 4px; overflow: hidden;
+    cursor: pointer; background: #000;
+  }
+  .history-item img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .history-item:hover { border-color: var(--accent); }
+  .history-item.active { border: 2px solid var(--accent); }
+  .history-del {
+    position: absolute; top: 1px; right: 1px;
+    width: 18px; height: 18px; padding: 0;
+    background: rgba(0,0,0,0.7); color: #fff;
+    border: none; border-radius: 3px;
+    font-size: 0.85rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; line-height: 1;
+  }
+  .history-del:hover { background: rgba(200,0,0,0.85); }
+  .history-clear {
+    font-size: 0.75rem; color: #888; background: transparent;
+    border: 1px solid #444; padding: 0.15rem 0.45rem; border-radius: 3px;
+    cursor: pointer;
+  }
+  .history-clear:hover { color: #ccc; border-color: #666; }
+
   .src-hsv-overlay {
     position: absolute; left: 0.4rem; right: 0.4rem; bottom: 0.4rem;
     background: rgba(0, 0, 0, 0.78);
@@ -316,6 +350,7 @@
   <div class="row" style="color: var(--muted); font-size: 0.8rem;">
     画像を画面にドラッグ＆ドロップ、または Cmd/Ctrl+V でペーストも可
   </div>
+  <div class="history-strip" id="history-strip" hidden></div>
 </div>
 
 <div class="panel">
@@ -800,6 +835,7 @@
     satMapBtn: document.getElementById('sat-map-btn'),
     satMapCanvas: document.getElementById('sat-map-canvas'),
     hueHistogram: document.getElementById('hue-histogram'),
+    historyStrip: document.getElementById('history-strip'),
     srcHsvOverlay: document.getElementById('src-hsv-overlay'),
     srcSelectedSwatch: document.getElementById('src-selected-swatch'),
     srcSelectedHex: document.getElementById('src-selected-hex'),
@@ -1033,6 +1069,11 @@
       els.pickMarkerOut.hidden = true;
       hidePasteOverlay();
       requestAnimationFrame(render);
+      if (!opts.skipHistory) {
+        saveToHistory(img);
+      } else {
+        renderHistoryStrip();
+      }
     } catch (e) {
       const isRemote = /^https?:/i.test(src);
       if (isRemote && opts.crossOrigin) {
@@ -1045,9 +1086,9 @@
       console.error(e);
     }
   }
-  function useBlob(blob) {
+  function useBlob(blob, opts = {}) {
     const url = URL.createObjectURL(blob);
-    return useImageSource(url).finally(() => {
+    return useImageSource(url, opts).finally(() => {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
   }
@@ -1193,6 +1234,7 @@
     els.pickMarkerSrc.hidden = true;
     els.pickMarkerOut.hidden = true;
     requestAnimationFrame(render);
+    saveToHistory(snap);
   }
   els.cameraBtn.addEventListener('click', openCamera);
   els.cameraCapture.addEventListener('click', captureFrame);
@@ -1201,7 +1243,8 @@
   // ---------- Reset ----------
   els.resetBtn.addEventListener('click', () => {
     els.fileInput.value = '';
-    useImageSource(DEFAULT_SOURCE);
+    activeHistoryId = null;
+    useImageSource(DEFAULT_SOURCE, { skipHistory: true });
   });
 
   // ---------- Controls ----------
@@ -1688,6 +1731,148 @@
     if (state.satMapOn) setStatus('彩度マップ: 明るい/赤いほど高彩度');
   });
 
+  // ---------- History (IndexedDB, up to 5) ----------
+  const HISTORY_MAX = 5;
+  const HISTORY_DB = 'check-value-history';
+  const HISTORY_STORE = 'imgs';
+  let activeHistoryId = null;
+
+  function openHistoryDB() {
+    return new Promise((res, rej) => {
+      const req = indexedDB.open(HISTORY_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(HISTORY_STORE)) {
+          db.createObjectStore(HISTORY_STORE, { keyPath: 'id', autoIncrement: true });
+        }
+      };
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+  async function historyAdd(item) {
+    const db = await openHistoryDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(HISTORY_STORE, 'readwrite');
+      const req = tx.objectStore(HISTORY_STORE).add(item);
+      req.onsuccess = () => res(req.result);
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function historyGetAll() {
+    const db = await openHistoryDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(HISTORY_STORE, 'readonly');
+      const req = tx.objectStore(HISTORY_STORE).getAll();
+      req.onsuccess = () => res(req.result.sort((a, b) => b.ts - a.ts));
+      req.onerror = () => rej(req.error);
+    });
+  }
+  async function historyDelete(id) {
+    const db = await openHistoryDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(HISTORY_STORE, 'readwrite');
+      tx.objectStore(HISTORY_STORE).delete(id);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function historyClear() {
+    const db = await openHistoryDB();
+    return new Promise((res, rej) => {
+      const tx = db.transaction(HISTORY_STORE, 'readwrite');
+      tx.objectStore(HISTORY_STORE).clear();
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function historyTrim(max) {
+    const all = await historyGetAll();
+    if (all.length <= max) return;
+    for (let i = max; i < all.length; i++) await historyDelete(all[i].id);
+  }
+
+  async function saveToHistory(source) {
+    try {
+      const W = source.naturalWidth || source.videoWidth || source.width;
+      const H = source.naturalHeight || source.videoHeight || source.height;
+      if (!W || !H) return;
+      const dims = fitDims(W, H, PROC_MAX);
+      const c = document.createElement('canvas');
+      c.width = dims.w; c.height = dims.h;
+      c.getContext('2d').drawImage(source, 0, 0, dims.w, dims.h);
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+      if (!blob) return;
+      const td = fitDims(dims.w, dims.h, 120);
+      const thumb = document.createElement('canvas');
+      thumb.width = td.w; thumb.height = td.h;
+      thumb.getContext('2d').drawImage(c, 0, 0, td.w, td.h);
+      const thumbUrl = thumb.toDataURL('image/jpeg', 0.7);
+      const id = await historyAdd({ ts: Date.now(), blob, thumbUrl });
+      activeHistoryId = id;
+      await historyTrim(HISTORY_MAX);
+      await renderHistoryStrip();
+    } catch (e) {
+      console.warn('history save failed', e);
+    }
+  }
+
+  async function loadFromHistory(item) {
+    activeHistoryId = item.id;
+    const url = URL.createObjectURL(item.blob);
+    try {
+      await useImageSource(url, { skipHistory: true });
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+    await renderHistoryStrip();
+  }
+
+  async function renderHistoryStrip() {
+    let items = [];
+    try { items = await historyGetAll(); } catch { items = []; }
+    els.historyStrip.innerHTML = '';
+    if (items.length === 0) { els.historyStrip.hidden = true; return; }
+    els.historyStrip.hidden = false;
+    const label = document.createElement('span');
+    label.className = 'history-label';
+    label.textContent = `最近の画像 (${items.length}/${HISTORY_MAX}):`;
+    els.historyStrip.appendChild(label);
+    for (const item of items) {
+      const div = document.createElement('div');
+      div.className = 'history-item' + (item.id === activeHistoryId ? ' active' : '');
+      div.title = new Date(item.ts).toLocaleString();
+      const img = document.createElement('img');
+      img.src = item.thumbUrl;
+      img.alt = '';
+      img.addEventListener('click', () => loadFromHistory(item));
+      div.appendChild(img);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'history-del';
+      del.textContent = '×';
+      del.title = '削除';
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await historyDelete(item.id);
+        if (activeHistoryId === item.id) activeHistoryId = null;
+        await renderHistoryStrip();
+      });
+      div.appendChild(del);
+      els.historyStrip.appendChild(div);
+    }
+    const clear = document.createElement('button');
+    clear.type = 'button';
+    clear.className = 'history-clear';
+    clear.textContent = 'すべて消去';
+    clear.addEventListener('click', async () => {
+      await historyClear();
+      activeHistoryId = null;
+      await renderHistoryStrip();
+    });
+    els.historyStrip.appendChild(clear);
+  }
+
   // ---------- URL params ----------
   const params = new URLSearchParams(location.search);
   let initialSrc = params.get('img') || params.get('source') || DEFAULT_SOURCE;
@@ -1704,13 +1889,17 @@
   // We always have download fallback, so keep it visible.
 
   // ---------- Boot ----------
-  useImageSource(initialSrc, useCors ? { crossOrigin: 'anonymous' } : {})
-    .then(() => {
-      if (params.get('capture') === '1') openCamera();
-      if (params.get('paste') === '1') {
-        showPasteOverlay('クリップボードから貼り付け');
-      }
-    });
+  const isDefaultBoot = initialSrc === DEFAULT_SOURCE;
+  useImageSource(initialSrc, {
+    ...(useCors ? { crossOrigin: 'anonymous' } : {}),
+    skipHistory: isDefaultBoot,
+  }).then(() => {
+    if (params.get('capture') === '1') openCamera();
+    if (params.get('paste') === '1') {
+      showPasteOverlay('クリップボードから貼り付け');
+    }
+  });
+  renderHistoryStrip();
 })();
 </script>
 
