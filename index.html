@@ -108,6 +108,32 @@
   .pick-marker::after  { top: 50%; left: -7px; height: 2px; width: 6px; margin-top: -1px; }
   .pick-marker[hidden] { display: none; }
 
+  .sat-map {
+    position: absolute; left: 0; top: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 5;
+  }
+  .sat-map[hidden] { display: none; }
+
+  .hue-histogram-row { margin-top: 0.6rem; }
+  .hue-histogram-row .label {
+    font-size: 0.85rem; color: #ccc; margin-bottom: 0.3rem;
+  }
+  .hue-histogram {
+    display: flex; align-items: flex-end;
+    height: 80px; gap: 1px;
+    padding: 0.4rem; background: #1a1a1a; border-radius: 4px;
+    position: relative;
+  }
+  .hue-bin {
+    flex: 1; min-width: 2px; min-height: 1px;
+    border-radius: 1px 1px 0 0;
+  }
+  .hue-axis {
+    display: flex; justify-content: space-between;
+    font-size: 0.65rem; color: #888; padding: 0.15rem 0.4rem 0;
+    font-family: monospace;
+  }
+
   .src-hsv-overlay {
     position: absolute; left: 0.4rem; right: 0.4rem; bottom: 0.4rem;
     background: rgba(0, 0, 0, 0.78);
@@ -347,6 +373,7 @@
     <button id="picker-btn" type="button" title="ON にして画像をクリック。元画像→そのRGB/HSV、出力画像→明度＋同明度の色候補">🎨 色を拾う</button>
     <button id="frame-btn" type="button" title="ON にして元画像をドラッグ → トリミング枠。枠外は薄暗くなり、下の分析もこの枠内で計算">🔲 トリミング枠</button>
     <button id="frame-reset-btn" type="button" title="トリミング枠を消す">枠を解除</button>
+    <button id="sat-map-btn" type="button" title="ON で元画像の彩度が高い領域を白〜黄でハイライト表示">🌶 彩度マップ</button>
     <span style="color: var(--muted); font-size: 0.8rem;">
       色を拾う: 各画像クリック→HSVオーバーレイ。出力は下に同明度の色候補も。トリミング枠: 元画像ドラッグ
     </span>
@@ -358,6 +385,7 @@
     <figcaption>入力 (カラー)</figcaption>
     <div class="canvas-wrap">
       <canvas id="canvas-src"></canvas>
+      <canvas class="sat-map" id="sat-map-canvas" hidden></canvas>
       <div class="frame-overlay" id="frame-overlay-src" hidden></div>
       <div class="pick-marker" id="pick-marker-src" hidden></div>
       <div class="src-hsv-overlay" id="src-hsv-overlay" hidden>
@@ -492,6 +520,11 @@
         <span class="bar-value" id="dark-v-value">—</span>
       </div>
     </div>
+  </div>
+  <div class="hue-histogram-row">
+    <div class="label">色相分布 <span style="color:var(--muted); font-weight:normal;">（彩度で重み付け、無彩色は除外）</span></div>
+    <div class="hue-histogram" id="hue-histogram"></div>
+    <div class="hue-axis"><span>0°(赤)</span><span>60°(黄)</span><span>120°(緑)</span><span>180°(シアン)</span><span>240°(青)</span><span>300°(マゼンタ)</span><span>360°</span></div>
   </div>
 </div>
 
@@ -733,6 +766,7 @@
     pickerOn: false,
     frameMode: false,
     frame: null, // normalized {x, y, w, h} in [0, 1] of src canvas, or null
+    satMapOn: false,
   };
 
   const els = {
@@ -763,6 +797,9 @@
     frameOverlayOut: document.getElementById('frame-overlay-out'),
     pickMarkerSrc: document.getElementById('pick-marker-src'),
     pickMarkerOut: document.getElementById('pick-marker-out'),
+    satMapBtn: document.getElementById('sat-map-btn'),
+    satMapCanvas: document.getElementById('sat-map-canvas'),
+    hueHistogram: document.getElementById('hue-histogram'),
     srcHsvOverlay: document.getElementById('src-hsv-overlay'),
     srcSelectedSwatch: document.getElementById('src-selected-swatch'),
     srcSelectedHex: document.getElementById('src-selected-hex'),
@@ -970,6 +1007,7 @@
     updateOutCaption();
     updateFrameOverlays();
     updateAnalysis();
+    updateSatMap();
   }
 
   // ---------- Image loading ----------
@@ -1551,36 +1589,104 @@
     els[prefix + 'VMarker'].style.left = v.toFixed(2) + '%';
     els[prefix + 'VValue'].textContent = Math.round(v);
   }
+  function frameRectInCanvas() {
+    const W = els.srcCanvas.width, H = els.srcCanvas.height;
+    const f = state.frame;
+    if (!f || f.w <= 0 || f.h <= 0) return { rx: 0, ry: 0, rw: W, rh: H };
+    let rx = Math.max(0, Math.floor(f.x * W));
+    let ry = Math.max(0, Math.floor(f.y * H));
+    let rw = Math.max(1, Math.floor(f.w * W));
+    let rh = Math.max(1, Math.floor(f.h * H));
+    if (rx + rw > W) rw = W - rx;
+    if (ry + rh > H) rh = H - ry;
+    return { rx, ry, rw, rh };
+  }
   function updateAnalysis() {
     if (!state.srcSource || els.srcCanvas.width === 0) {
       els.analysisPanel.hidden = true;
       return;
     }
     const ctx = els.srcCanvas.getContext('2d');
-    const W = els.srcCanvas.width, H = els.srcCanvas.height;
-    const f = state.frame;
-    let rx = 0, ry = 0, rw = W, rh = H;
-    if (f && f.w > 0 && f.h > 0) {
-      rx = Math.max(0, Math.floor(f.x * W));
-      ry = Math.max(0, Math.floor(f.y * H));
-      rw = Math.max(1, Math.floor(f.w * W));
-      rh = Math.max(1, Math.floor(f.h * H));
-      if (rx + rw > W) rw = W - rx;
-      if (ry + rh > H) rh = H - ry;
-    }
+    const { rx, ry, rw, rh } = frameRectInCanvas();
     const data = ctx.getImageData(rx, ry, rw, rh).data;
     let maxV = -1, minV = 1e9;
     let mR = 0, mG = 0, mB = 0, nR = 0, nG = 0, nB = 0;
+    const BINS = 36;
+    const hueCounts = new Float64Array(BINS);
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i], g = data[i + 1], b = data[i + 2];
       const v = Math.max(r, g, b);
       if (v > maxV) { maxV = v; mR = r; mG = g; mB = b; }
       if (v < minV) { minV = v; nR = r; nG = g; nB = b; }
+      // Hue histogram (weighted by saturation, skip near-grays)
+      const mn = Math.min(r, g, b);
+      const d = v - mn;
+      const sNorm = v === 0 ? 0 : d / v;
+      if (sNorm >= 0.1) {
+        let h = 0;
+        if (v === r) h = ((g - b) / d) % 6;
+        else if (v === g) h = (b - r) / d + 2;
+        else h = (r - g) / d + 4;
+        h *= 60; if (h < 0) h += 360;
+        const bin = Math.min(BINS - 1, Math.floor(h / 360 * BINS));
+        hueCounts[bin] += sNorm;
+      }
     }
     setAnalysisRow('bright', mR, mG, mB);
     setAnalysisRow('dark', nR, nG, nB);
+    renderHueHistogram(hueCounts);
     els.analysisPanel.hidden = false;
   }
+  function renderHueHistogram(counts) {
+    const BINS = counts.length;
+    let maxC = 0;
+    for (let i = 0; i < BINS; i++) if (counts[i] > maxC) maxC = counts[i];
+    let html = '';
+    for (let i = 0; i < BINS; i++) {
+      const hueCenter = (i + 0.5) / BINS * 360;
+      const pct = maxC > 0 ? counts[i] / maxC * 100 : 0;
+      html += `<div class="hue-bin" style="height:${pct.toFixed(1)}%;background:${hsvToHex(hueCenter, 90, 95)};" title="${Math.round(hueCenter)}°"></div>`;
+    }
+    els.hueHistogram.innerHTML = html;
+  }
+
+  // ---------- Saturation map overlay ----------
+  function updateSatMap() {
+    if (!state.satMapOn || !state.srcSource || els.srcCanvas.width === 0) {
+      els.satMapCanvas.hidden = true;
+      return;
+    }
+    const srcCtx = els.srcCanvas.getContext('2d');
+    const W = els.srcCanvas.width, H = els.srcCanvas.height;
+    const src = srcCtx.getImageData(0, 0, W, H).data;
+    els.satMapCanvas.width = W;
+    els.satMapCanvas.height = H;
+    const oc = els.satMapCanvas.getContext('2d');
+    const out = oc.createImageData(W, H);
+    const dst = out.data;
+    for (let i = 0; i < src.length; i += 4) {
+      const r = src[i], g = src[i + 1], b = src[i + 2];
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      const s = mx === 0 ? 0 : (mx - mn) / mx; // 0..1
+      // Hot color ramp: black(0) -> dark red -> orange -> yellow -> white(1)
+      const t = s;
+      let R, G, B;
+      if (t < 0.33) { const u = t / 0.33; R = 255 * u; G = 0; B = 0; }
+      else if (t < 0.66) { const u = (t - 0.33) / 0.33; R = 255; G = 165 * u; B = 0; }
+      else { const u = (t - 0.66) / 0.34; R = 255; G = 165 + 90 * u; B = 235 * u; }
+      dst[i] = R; dst[i + 1] = G; dst[i + 2] = B;
+      // Alpha: low sat → transparent, high sat → mostly opaque (cap at 0.88)
+      dst[i + 3] = Math.round(Math.pow(s, 1.2) * 224);
+    }
+    oc.putImageData(out, 0, 0);
+    els.satMapCanvas.hidden = false;
+  }
+  els.satMapBtn.addEventListener('click', () => {
+    state.satMapOn = !state.satMapOn;
+    els.satMapBtn.classList.toggle('toggle-on', state.satMapOn);
+    updateSatMap();
+    if (state.satMapOn) setStatus('彩度マップ: 明るい/赤いほど高彩度');
+  });
 
   // ---------- URL params ----------
   const params = new URLSearchParams(location.search);
