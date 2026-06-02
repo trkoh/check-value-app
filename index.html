@@ -189,6 +189,53 @@
     cursor: pointer;
   }
   .src-hsv-overlay .ov-close:hover { background: #333; }
+  .src-hsv-overlay .hsv-body {
+    display: flex; gap: 0.5rem; align-items: flex-start;
+  }
+  .src-hsv-overlay .hsv-bars { flex: 1; min-width: 0; }
+  .src-hsv-overlay .hsv-wheel-wrap {
+    flex: 0 0 78px; position: relative;
+  }
+  .color-wheel { width: 78px; height: 78px; display: block; border-radius: 50%; }
+  .wheel-marker {
+    position: absolute; width: 10px; height: 10px;
+    border: 2px solid #fff; border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.85), 0 0 4px rgba(0,0,0,0.6);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+  }
+  .wheel-marker[hidden] { display: none; }
+  .wheel-caption {
+    text-align: center; font-size: 0.65rem; color: #888;
+    margin-top: 0.1rem; font-family: monospace;
+  }
+
+  .picked-history-row {
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-top: 0.5rem; flex-wrap: wrap;
+  }
+  .picked-history-row[hidden] { display: none; }
+  .picked-history-list {
+    display: flex; gap: 0.3rem; flex-wrap: wrap;
+  }
+  .picked-swatch {
+    width: 30px; height: 30px;
+    border-radius: 4px; border: 1px solid #555;
+    cursor: pointer; position: relative;
+  }
+  .picked-swatch:hover { border-color: var(--accent); }
+  .picked-swatch.copied::after {
+    content: 'コピー'; position: absolute; inset: 0;
+    background: rgba(80,150,200,0.9); color: #fff;
+    border-radius: 3px;
+    font-size: 0.65rem; display: flex; align-items: center; justify-content: center;
+  }
+  .picked-history-clear {
+    font-size: 0.7rem; color: #888; background: transparent;
+    border: 1px solid #444; padding: 0.1rem 0.4rem; border-radius: 3px;
+    cursor: pointer;
+  }
+  .picked-history-clear:hover { color: #ccc; border-color: #666; }
 
   .analysis-row {
     display: flex; align-items: center; gap: 0.6rem;
@@ -413,6 +460,11 @@
       色を拾う: 各画像クリック→HSVオーバーレイ。出力は下に同明度の色候補も。トリミング枠: 元画像ドラッグ
     </span>
   </div>
+  <div class="picked-history-row" id="picked-history-row" hidden>
+    <span style="color: var(--muted); font-size: 0.8rem;">スポイト履歴:</span>
+    <div class="picked-history-list" id="picked-history-list"></div>
+    <button class="picked-history-clear" id="picked-history-clear" type="button">全消去</button>
+  </div>
 </div>
 
 <div class="grid">
@@ -430,20 +482,29 @@
           <button id="src-copy-hex-btn" type="button" style="padding:0.15rem 0.45rem; font-size:0.75rem;">HEXコピー</button>
           <button id="src-ov-close" type="button" class="ov-close" title="閉じる">×</button>
         </div>
-        <div class="bar-row">
-          <span class="bar-label">色相 H</span>
-          <div class="bar hue"><div class="bar-marker" id="src-bar-hue-marker"></div></div>
-          <span class="bar-value" id="src-bar-hue-value">—</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label">彩度 S</span>
-          <div class="bar" id="src-bar-sat"><div class="bar-marker" id="src-bar-sat-marker"></div></div>
-          <span class="bar-value" id="src-bar-sat-value">—</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label">明度 V</span>
-          <div class="bar" id="src-bar-val"><div class="bar-marker" id="src-bar-val-marker"></div></div>
-          <span class="bar-value" id="src-bar-val-value">—</span>
+        <div class="hsv-body">
+          <div class="hsv-bars">
+            <div class="bar-row">
+              <span class="bar-label">色相 H</span>
+              <div class="bar hue"><div class="bar-marker" id="src-bar-hue-marker"></div></div>
+              <span class="bar-value" id="src-bar-hue-value">—</span>
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">彩度 S</span>
+              <div class="bar" id="src-bar-sat"><div class="bar-marker" id="src-bar-sat-marker"></div></div>
+              <span class="bar-value" id="src-bar-sat-value">—</span>
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">明度 V</span>
+              <div class="bar" id="src-bar-val"><div class="bar-marker" id="src-bar-val-marker"></div></div>
+              <span class="bar-value" id="src-bar-val-value">—</span>
+            </div>
+          </div>
+          <div class="hsv-wheel-wrap">
+            <canvas class="color-wheel" id="src-color-wheel" width="78" height="78"></canvas>
+            <div class="wheel-marker" id="src-wheel-marker" hidden></div>
+            <div class="wheel-caption">H × S</div>
+          </div>
         </div>
       </div>
     </div>
@@ -461,20 +522,29 @@
           <button id="out-copy-hex-btn" type="button" style="padding:0.15rem 0.45rem; font-size:0.75rem;">HEXコピー</button>
           <button id="out-ov-close" type="button" class="ov-close" title="閉じる">×</button>
         </div>
-        <div class="bar-row">
-          <span class="bar-label">色相 H</span>
-          <div class="bar hue"><div class="bar-marker" id="out-bar-hue-marker"></div></div>
-          <span class="bar-value" id="out-bar-hue-value">—</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label">彩度 S</span>
-          <div class="bar" id="out-bar-sat"><div class="bar-marker" id="out-bar-sat-marker"></div></div>
-          <span class="bar-value" id="out-bar-sat-value">—</span>
-        </div>
-        <div class="bar-row">
-          <span class="bar-label">明度 V</span>
-          <div class="bar" id="out-bar-val"><div class="bar-marker" id="out-bar-val-marker"></div></div>
-          <span class="bar-value" id="out-bar-val-value">—</span>
+        <div class="hsv-body">
+          <div class="hsv-bars">
+            <div class="bar-row">
+              <span class="bar-label">色相 H</span>
+              <div class="bar hue"><div class="bar-marker" id="out-bar-hue-marker"></div></div>
+              <span class="bar-value" id="out-bar-hue-value">—</span>
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">彩度 S</span>
+              <div class="bar" id="out-bar-sat"><div class="bar-marker" id="out-bar-sat-marker"></div></div>
+              <span class="bar-value" id="out-bar-sat-value">—</span>
+            </div>
+            <div class="bar-row">
+              <span class="bar-label">明度 V</span>
+              <div class="bar" id="out-bar-val"><div class="bar-marker" id="out-bar-val-marker"></div></div>
+              <span class="bar-value" id="out-bar-val-value">—</span>
+            </div>
+          </div>
+          <div class="hsv-wheel-wrap">
+            <canvas class="color-wheel" id="out-color-wheel" width="78" height="78"></canvas>
+            <div class="wheel-marker" id="out-wheel-marker" hidden></div>
+            <div class="wheel-caption">H × S</div>
+          </div>
         </div>
       </div>
     </div>
@@ -849,6 +919,8 @@
     srcBarVal: document.getElementById('src-bar-val'),
     srcBarValMarker: document.getElementById('src-bar-val-marker'),
     srcBarValValue: document.getElementById('src-bar-val-value'),
+    srcColorWheel: document.getElementById('src-color-wheel'),
+    srcWheelMarker: document.getElementById('src-wheel-marker'),
     analysisPanel: document.getElementById('analysis-panel'),
     brightSwatch: document.getElementById('analysis-bright-swatch'),
     brightHMarker: document.getElementById('bright-h-marker'),
@@ -883,6 +955,11 @@
     outBarVal: document.getElementById('out-bar-val'),
     outBarValMarker: document.getElementById('out-bar-val-marker'),
     outBarValValue: document.getElementById('out-bar-val-value'),
+    outColorWheel: document.getElementById('out-color-wheel'),
+    outWheelMarker: document.getElementById('out-wheel-marker'),
+    pickedHistoryRow: document.getElementById('picked-history-row'),
+    pickedHistoryList: document.getElementById('picked-history-list'),
+    pickedHistoryClear: document.getElementById('picked-history-clear'),
     paletteInfo: document.getElementById('palette-info'),
     paletteGrid: document.getElementById('palette-grid'),
     paletteDetail: document.getElementById('palette-detail'),
@@ -1427,6 +1504,93 @@
     markerEl.style.top = yPct.toFixed(3) + '%';
     markerEl.hidden = false;
   }
+
+  // ---------- Color wheel (HSV: angle=H, radius=S, value=V) ----------
+  function drawColorWheel(canvas, value) {
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    const cx = size / 2, cy = size / 2;
+    const r = size / 2 - 1;
+    const img = ctx.createImageData(size, size);
+    const data = img.data;
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const dx = x - cx, dy = y - cy;
+        const dist = Math.hypot(dx, dy);
+        const i = (y * size + x) * 4;
+        if (dist > r) { data[i + 3] = 0; continue; }
+        let h = Math.atan2(-dy, dx) * 180 / Math.PI;
+        if (h < 0) h += 360;
+        const s = Math.min(100, (dist / r) * 100);
+        const [R, G, B] = hsvToRgb(h, s, value);
+        data[i] = R; data[i + 1] = G; data[i + 2] = B; data[i + 3] = 255;
+      }
+    }
+    ctx.clearRect(0, 0, size, size);
+    ctx.putImageData(img, 0, 0);
+  }
+  function placeWheelMarker(markerEl, canvas, h, s) {
+    // Position is % of canvas-wrap (which is sized same as canvas via CSS 78x78)
+    const a = h * Math.PI / 180;
+    const radiusPct = (s / 100) * (50 - 1.3); // leave margin for circle edge
+    const x = 50 + Math.cos(a) * radiusPct;
+    const y = 50 - Math.sin(a) * radiusPct;
+    markerEl.style.left = x.toFixed(2) + '%';
+    markerEl.style.top = y.toFixed(2) + '%';
+    markerEl.hidden = false;
+  }
+
+  // ---------- Picked color history (localStorage, up to 5) ----------
+  const PICKED_HISTORY_KEY = 'check-value-picked-history';
+  const PICKED_HISTORY_MAX = 5;
+  function loadPickedHistory() {
+    try { return JSON.parse(localStorage.getItem(PICKED_HISTORY_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function savePickedHistory(arr) {
+    try { localStorage.setItem(PICKED_HISTORY_KEY, JSON.stringify(arr)); } catch {}
+  }
+  function addPickedColor(hex) {
+    if (!hex) return;
+    let arr = loadPickedHistory().filter(x => x !== hex);
+    arr.unshift(hex);
+    if (arr.length > PICKED_HISTORY_MAX) arr = arr.slice(0, PICKED_HISTORY_MAX);
+    savePickedHistory(arr);
+    renderPickedHistory();
+  }
+  function hexToRgb(hex) {
+    const v = hex.replace('#', '');
+    return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+  }
+  function renderPickedHistory() {
+    const arr = loadPickedHistory();
+    els.pickedHistoryList.innerHTML = '';
+    if (arr.length === 0) {
+      els.pickedHistoryRow.hidden = true;
+      return;
+    }
+    els.pickedHistoryRow.hidden = false;
+    for (const hex of arr) {
+      const sw = document.createElement('div');
+      sw.className = 'picked-swatch';
+      sw.style.background = hex;
+      const [R, G, B] = hexToRgb(hex);
+      const { h, s, v } = rgbToHsv(R, G, B);
+      sw.title = `${hex}  H${Math.round(h)} S${Math.round(s)} V${Math.round(v)} — クリックでコピー`;
+      sw.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(hex);
+          sw.classList.add('copied');
+          setTimeout(() => sw.classList.remove('copied'), 700);
+        } catch (e) { setStatus('クリップボード書込みに失敗', true); }
+      });
+      els.pickedHistoryList.appendChild(sw);
+    }
+  }
+  els.pickedHistoryClear.addEventListener('click', () => {
+    savePickedHistory([]);
+    renderPickedHistory();
+  });
   let srcSelectedHex = null;
   function showColorFromSrc(canvasX, canvasY) {
     const ctx = els.srcCanvas.getContext('2d');
@@ -1450,7 +1614,10 @@
       'linear-gradient(to right, ' + hsvToHex(h, s, 0) + ', ' + hsvToHex(h, s, 100) + ')';
     els.srcBarValMarker.style.left = v.toFixed(2) + '%';
     els.srcBarValValue.textContent = Math.round(v);
+    drawColorWheel(els.srcColorWheel, v);
+    placeWheelMarker(els.srcWheelMarker, els.srcColorWheel, h, s);
     els.srcHsvOverlay.hidden = false;
+    addPickedColor(hex);
   }
   els.srcCopyHexBtn.addEventListener('click', async () => {
     if (!srcSelectedHex) return;
@@ -1489,7 +1656,10 @@
       'linear-gradient(to right, ' + hsvToHex(h, s, 0) + ', ' + hsvToHex(h, s, 100) + ')';
     els.outBarValMarker.style.left = v.toFixed(2) + '%';
     els.outBarValValue.textContent = Math.round(v);
+    drawColorWheel(els.outColorWheel, v);
+    placeWheelMarker(els.outWheelMarker, els.outColorWheel, h, s);
     els.outHsvOverlay.hidden = false;
+    addPickedColor(hex);
   }
   els.outCopyHexBtn.addEventListener('click', async () => {
     if (!outSelectedHex) return;
@@ -1966,6 +2136,7 @@
     }
   });
   renderHistoryStrip();
+  renderPickedHistory();
 })();
 </script>
 
