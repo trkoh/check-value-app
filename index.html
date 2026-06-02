@@ -91,6 +91,23 @@
   }
   .frame-overlay[hidden] { display: none; }
 
+  .pick-marker {
+    position: absolute; pointer-events: none;
+    width: 18px; height: 18px;
+    margin-left: -9px; margin-top: -9px;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.85), 0 0 6px rgba(0, 0, 0, 0.6);
+    z-index: 11;
+  }
+  .pick-marker::before, .pick-marker::after {
+    content: ''; position: absolute; background: #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85);
+  }
+  .pick-marker::before { left: 50%; top: -7px; width: 2px; height: 6px; margin-left: -1px; }
+  .pick-marker::after  { top: 50%; left: -7px; height: 2px; width: 6px; margin-top: -1px; }
+  .pick-marker[hidden] { display: none; }
+
   .src-hsv-overlay {
     position: absolute; left: 0.4rem; right: 0.4rem; bottom: 0.4rem;
     background: rgba(0, 0, 0, 0.78);
@@ -342,6 +359,7 @@
     <div class="canvas-wrap">
       <canvas id="canvas-src"></canvas>
       <div class="frame-overlay" id="frame-overlay-src" hidden></div>
+      <div class="pick-marker" id="pick-marker-src" hidden></div>
       <div class="src-hsv-overlay" id="src-hsv-overlay" hidden>
         <div class="selected-row">
           <div class="selected-swatch-large" id="src-selected-swatch"></div>
@@ -372,6 +390,7 @@
     <div class="canvas-wrap">
       <canvas id="canvas-out"></canvas>
       <div class="frame-overlay" id="frame-overlay-out" hidden></div>
+      <div class="pick-marker" id="pick-marker-out" hidden></div>
       <div class="src-hsv-overlay" id="out-hsv-overlay" hidden>
         <div class="selected-row">
           <div class="selected-swatch-large" id="out-selected-swatch"></div>
@@ -742,6 +761,8 @@
     frameResetBtn: document.getElementById('frame-reset-btn'),
     frameOverlaySrc: document.getElementById('frame-overlay-src'),
     frameOverlayOut: document.getElementById('frame-overlay-out'),
+    pickMarkerSrc: document.getElementById('pick-marker-src'),
+    pickMarkerOut: document.getElementById('pick-marker-out'),
     srcHsvOverlay: document.getElementById('src-hsv-overlay'),
     srcSelectedSwatch: document.getElementById('src-selected-swatch'),
     srcSelectedHex: document.getElementById('src-selected-hex'),
@@ -970,6 +991,8 @@
       hidePalette();
       els.srcHsvOverlay.hidden = true;
       els.outHsvOverlay.hidden = true;
+      els.pickMarkerSrc.hidden = true;
+      els.pickMarkerOut.hidden = true;
       hidePasteOverlay();
       requestAnimationFrame(render);
     } catch (e) {
@@ -1129,6 +1152,8 @@
     hidePalette();
     els.srcHsvOverlay.hidden = true;
     els.outHsvOverlay.hidden = true;
+    els.pickMarkerSrc.hidden = true;
+    els.pickMarkerOut.hidden = true;
     requestAnimationFrame(render);
   }
   els.cameraBtn.addEventListener('click', openCamera);
@@ -1313,11 +1338,20 @@
     const { x, y } = eventToCanvasXY(e, els.outCanvas);
     showPaletteAt(x, y);
   }
+  function placePickMarker(markerEl, canvas, canvasX, canvasY) {
+    if (!canvas.width || !canvas.height) return;
+    const xPct = Math.max(0, Math.min(100, (canvasX / canvas.width) * 100));
+    const yPct = Math.max(0, Math.min(100, (canvasY / canvas.height) * 100));
+    markerEl.style.left = xPct.toFixed(3) + '%';
+    markerEl.style.top = yPct.toFixed(3) + '%';
+    markerEl.hidden = false;
+  }
   let srcSelectedHex = null;
   function showColorFromSrc(canvasX, canvasY) {
     const ctx = els.srcCanvas.getContext('2d');
     const cx = Math.max(0, Math.min(els.srcCanvas.width - 1, Math.round(canvasX)));
     const cy = Math.max(0, Math.min(els.srcCanvas.height - 1, Math.round(canvasY)));
+    placePickMarker(els.pickMarkerSrc, els.srcCanvas, cx, cy);
     const px = ctx.getImageData(cx, cy, 1, 1).data;
     const R = px[0], G = px[1], B = px[2];
     const hex = rgbToHex(R, G, B);
@@ -1348,6 +1382,7 @@
   });
   els.srcOvClose.addEventListener('click', () => {
     els.srcHsvOverlay.hidden = true;
+    els.pickMarkerSrc.hidden = true;
   });
 
   let outSelectedHex = null;
@@ -1355,6 +1390,7 @@
     const ctx = els.outCanvas.getContext('2d');
     const cx = Math.max(0, Math.min(els.outCanvas.width - 1, Math.round(canvasX)));
     const cy = Math.max(0, Math.min(els.outCanvas.height - 1, Math.round(canvasY)));
+    placePickMarker(els.pickMarkerOut, els.outCanvas, cx, cy);
     const px = ctx.getImageData(cx, cy, 1, 1).data;
     const R = px[0], G = px[1], B = px[2];
     const hex = rgbToHex(R, G, B);
@@ -1385,6 +1421,7 @@
   });
   els.outOvClose.addEventListener('click', () => {
     els.outHsvOverlay.hidden = true;
+    els.pickMarkerOut.hidden = true;
   });
   els.outCanvas.addEventListener('click', (e) => {
     if (!state.pickerOn) return;
@@ -1406,6 +1443,8 @@
       hidePalette();
       els.srcHsvOverlay.hidden = true;
       els.outHsvOverlay.hidden = true;
+      els.pickMarkerSrc.hidden = true;
+      els.pickMarkerOut.hidden = true;
     } else {
       setStatus('元画像クリック=その色のHSV / 出力画像クリック=HSV + 同明度の色候補');
     }
