@@ -1750,16 +1750,47 @@
       req.onerror = () => rej(req.error);
     });
   }
+  function describeIdbError(prefix, e) {
+    if (!e) return prefix + ' (no error object)';
+    const name = e.name || '?';
+    const msg = e.message || '';
+    return `${prefix} [${name}] ${msg}`;
+  }
   async function historyAdd(item) {
     const db = await openHistoryDB();
     return new Promise((res, rej) => {
-      const tx = db.transaction(HISTORY_STORE, 'readwrite');
+      let tx;
+      try {
+        tx = db.transaction(HISTORY_STORE, 'readwrite');
+      } catch (e) {
+        rej(new Error(describeIdbError('tx open failed', e)));
+        return;
+      }
       let newId = null;
-      const req = tx.objectStore(HISTORY_STORE).add(item);
+      let lastErr = null;
+      let req;
+      try {
+        req = tx.objectStore(HISTORY_STORE).add(item);
+      } catch (e) {
+        rej(new Error(describeIdbError('add() throw', e)));
+        return;
+      }
       req.onsuccess = () => { newId = req.result; };
+      req.onerror = (ev) => {
+        lastErr = req.error;
+        ev.preventDefault();
+        try { tx.abort(); } catch {}
+        rej(new Error(describeIdbError('req error', lastErr)));
+      };
       tx.oncomplete = () => res(newId);
-      tx.onerror = () => rej(tx.error || new Error('historyAdd tx failed'));
-      tx.onabort = () => rej(tx.error || new Error('historyAdd tx aborted'));
+      tx.onerror = () => {
+        if (lastErr) return;
+        rej(new Error(describeIdbError('tx error', tx.error)));
+      };
+      tx.onabort = () => {
+        if (lastErr) return;
+        rej(new Error(describeIdbError('tx abort', tx.error)));
+      };
     });
   }
   async function historyGetAll() {
@@ -1807,9 +1838,16 @@
       const c = document.createElement('canvas');
       c.width = dims.w; c.height = dims.h;
       c.getContext('2d').drawImage(source, 0, 0, dims.w, dims.h);
-      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
-      if (!blob) {
-        setStatus('履歴保存失敗: toBlob が null（CORSで汚染された可能性）', true);
+      // Store as dataURL — more portable across IDB implementations than Blob
+      let dataUrl;
+      try {
+        dataUrl = c.toDataURL('image/jpeg', 0.88);
+      } catch (e) {
+        setStatus('履歴保存失敗: 本体生成エラー ' + e.message + '（CORS汚染の可能性）', true);
+        return;
+      }
+      if (!dataUrl || dataUrl === 'data:,') {
+        setStatus('履歴保存失敗: 空のdataURL', true);
         return;
       }
       const td = fitDims(dims.w, dims.h, 120);
@@ -1823,7 +1861,7 @@
         setStatus('履歴保存失敗: サムネ生成エラー ' + e.message, true);
         return;
       }
-      const id = await historyAdd({ ts: Date.now(), blob, thumbUrl });
+      const id = await historyAdd({ ts: Date.now(), dataUrl, thumbUrl });
       activeHistoryId = id;
       await historyTrim(HISTORY_MAX);
       await renderHistoryStrip();
@@ -1835,11 +1873,17 @@
 
   async function loadFromHistory(item) {
     activeHistoryId = item.id;
-    const url = URL.createObjectURL(item.blob);
+    // Legacy items may still use `blob`; new items use `dataUrl`
+    const src = item.dataUrl ? item.dataUrl :
+      (item.blob ? URL.createObjectURL(item.blob) : null);
+    if (!src) {
+      setStatus('履歴の読込みに失敗（壊れたエントリ）', true);
+      return;
+    }
     try {
-      await useImageSource(url, { skipHistory: true });
+      await useImageSource(src, { skipHistory: true });
     } finally {
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      if (!item.dataUrl) setTimeout(() => URL.revokeObjectURL(src), 5000);
     }
     await renderHistoryStrip();
   }
