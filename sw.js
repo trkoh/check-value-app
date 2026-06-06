@@ -1,4 +1,4 @@
-const CACHE = 'check-value-v15';
+const CACHE = 'check-value-v16';
 const ASSETS = [
   './',
   './index.html',
