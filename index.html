@@ -1663,43 +1663,6 @@
     renderPickedHistory();
   });
 
-  // ---------- Memo input wiring ----------
-  let memoSaveTimer = null;
-  function onMemoFieldInput() {
-    if (!activeHistoryId) {
-      setMemoStatus('未保存（履歴未登録の画像 — ペースト/読込で履歴に追加されると以降のメモは自動保存）', 'unsaved');
-      return;
-    }
-    setMemoStatus('入力中…', 'saving');
-    clearTimeout(memoSaveTimer);
-    memoSaveTimer = setTimeout(async () => {
-      try {
-        await historyUpdateMemo(activeHistoryId, getMemoData());
-        setMemoStatus('保存済み', 'saved');
-      } catch (e) {
-        setMemoStatus('保存失敗: ' + (e && e.message ? e.message : e), 'unsaved');
-      }
-    }, 500);
-  }
-  els.memoResetBtn.addEventListener('click', async () => {
-    const anyContent = Object.values(getMemoData()).some(v => v && v.trim());
-    if (anyContent) {
-      if (!confirm('メモの全フィールドを空にします。よろしいですか？')) return;
-    }
-    clearMemoData();
-    if (activeHistoryId) {
-      try {
-        await historyUpdateMemo(activeHistoryId, getMemoData());
-        setMemoStatus('全消去して保存しました', 'saved');
-      } catch (e) {
-        setMemoStatus('保存失敗: ' + (e && e.message ? e.message : e), 'unsaved');
-      }
-    } else {
-      setMemoStatus('全消去しました（未保存）', 'unsaved');
-    }
-  });
-  buildMemoForm();
-  setMemoStatus('—');
   let srcSelectedHex = null;
   function showColorFromSrc(canvasX, canvasY) {
     const ctx = els.srcCanvas.getContext('2d');
@@ -2118,6 +2081,44 @@
     els.memoSaveStatus.className = 'memo-status' + (cls ? ' ' + cls : '');
     els.memoSaveStatus.textContent = text;
   }
+
+  // ---------- Memo input wiring ----------
+  let memoSaveTimer = null;
+  function onMemoFieldInput() {
+    if (!activeHistoryId) {
+      setMemoStatus('未保存（履歴未登録の画像 — ペースト/読込で履歴に追加されると以降のメモは自動保存）', 'unsaved');
+      return;
+    }
+    setMemoStatus('入力中…', 'saving');
+    clearTimeout(memoSaveTimer);
+    memoSaveTimer = setTimeout(async () => {
+      try {
+        await historyUpdateMemo(activeHistoryId, getMemoData());
+        setMemoStatus('保存済み', 'saved');
+      } catch (e) {
+        setMemoStatus('保存失敗: ' + (e && e.message ? e.message : e), 'unsaved');
+      }
+    }, 500);
+  }
+  els.memoResetBtn.addEventListener('click', async () => {
+    const anyContent = Object.values(getMemoData()).some(v => v && v.trim());
+    if (anyContent) {
+      if (!confirm('メモの全フィールドを空にします。よろしいですか？')) return;
+    }
+    clearMemoData();
+    if (activeHistoryId) {
+      try {
+        await historyUpdateMemo(activeHistoryId, getMemoData());
+        setMemoStatus('全消去して保存しました', 'saved');
+      } catch (e) {
+        setMemoStatus('保存失敗: ' + (e && e.message ? e.message : e), 'unsaved');
+      }
+    } else {
+      setMemoStatus('全消去しました（未保存）', 'unsaved');
+    }
+  });
+  buildMemoForm();
+  setMemoStatus('—');
 
   // ---------- History (IndexedDB, up to 5) ----------
   const HISTORY_MAX = 5;
