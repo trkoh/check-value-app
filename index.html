@@ -1463,7 +1463,7 @@
       lines.push({ kind: 'h2', text: sec.title });
       if (sec.note) lines.push({ kind: 'hint', text: sec.note });
       for (const item of sec.items) {
-        lines.push({ kind: 'h3', text: item.label });
+        if (item.label) lines.push({ kind: 'h3', text: item.label });
         if (item.hint) lines.push({ kind: 'hint', text: item.hint });
         const ans = ((data[item.key] || '') + '').trim();
         lines.push({ kind: 'ans', text: ans || '（未記入）', empty: !ans });
@@ -1487,10 +1487,8 @@
     const tctx = tmp.getContext('2d');
     const lines = memoTextLines();
     const memoEndY = processMemoLines(tctx, lines, 0, 0, memoMaxW, false);
-    const titleH = 36; // "メモ" heading
-    const memoH = titleH + memoEndY;
 
-    const H = PAD + stripH + PAD + memoH + PAD;
+    const H = PAD + stripH + PAD + memoEndY + PAD;
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     const ctx = c.getContext('2d');
@@ -1502,14 +1500,9 @@
     ctx.drawImage(els.srcCanvas, stripX, PAD + Math.floor((stripH - sh) / 2));
     ctx.drawImage(els.outCanvas, stripX + sw + 8, PAD + Math.floor((stripH - oh) / 2));
 
-    // Memo title + body
-    let y = PAD + stripH + PAD;
+    // Memo body (section title is rendered by processMemoLines as h2)
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 22px system-ui, "Hiragino Sans", "Yu Gothic", sans-serif';
-    ctx.fillText('メモ（光源・固有色・面の認識）', PAD, y);
-    y += titleH;
-    processMemoLines(ctx, lines, PAD, y, memoMaxW, true);
+    processMemoLines(ctx, lines, PAD, PAD + stripH + PAD, memoMaxW, true);
 
     return c;
   }
@@ -2046,43 +2039,19 @@
     if (state.satMapOn) setStatus('彩度マップ: 明るい/赤いほど高彩度');
   });
 
-  // ---------- Memo: structured form schema ----------
+  // ---------- Memo: schema (single free-form field) ----------
   const MEMO_SCHEMA = [
     {
-      title: '🎨 1. 光源を認識する',
-      note: '光の色によってモチーフの色が変わる。モチーフ自体の色だけでなく、どのような光が当たっているかが重要。複数の光源の影響により、結果としてモチーフの色が決定される。',
+      title: '📝 メモ',
+      note: '写真で失われた情報、感じたこと、気づきなど',
       items: [
-        { key: 'q1_1', label: '💡 1-1. 光源の種類は？', hint: '例: 蛍光灯 / ネオンライト / 自然光 / ろうそく', rows: 2 },
-        { key: 'q1_2', label: '💡 1-2. 寒色光？暖色光？', rows: 1 },
-        { key: 'q1_3', label: '💡 1-3. 向きは？', rows: 1 },
-        { key: 'q1_4', label: '💡 1-4. 方向は？', rows: 1 },
-        { key: 'q1_5', label: '💡 1-5. 照度は？', hint: 'モチーフに到達した光の量。物体が正確な色を帯びるためには適切な照度が必要', rows: 2 },
-        { key: 'q1_6', label: '💡 1-6. 他光源比の相対光量は？', hint: '全体を10としたとき', rows: 1 },
-      ],
-    },
-    {
-      title: '🎨 2. 単純化し固有色を置く',
-      items: [
-        { key: 'q2_1', label: '💡 2-1. 1〜5程度の明暗階調に分ける', rows: 3 },
-        { key: 'q2_2', label: '💡 2-2. 何を「書かない」か', hint: '誘惑に打ち勝つ強い意志。つまり、何を書くかを決定する', rows: 3 },
-        { key: 'q2_3', label: '💡 2-3. 彩度・色相（寒色/暖色）の相対決定と強調', rows: 3 },
-      ],
-    },
-    {
-      title: '🎨 3. 面で単純化する',
-      note: '上向き・下向き・横向きの面でざっくりとらえる',
-      items: [
-        { key: 'q3_1', label: '面の分解と分類', rows: 3 },
-      ],
-    },
-    {
-      title: '📝 Tips / 自由メモ',
-      note: '彩色: 1. 色が必要なところに → 2. バリュー確認 → 3. 色の属性調整 → 4. 主観的な色を塗る',
-      items: [
-        { key: 'free', label: '自由記述', rows: 4 },
+        { key: 'free', label: '', rows: 16 },
       ],
     },
   ];
+  // Legacy structured-form keys (kept here only for backward-compat migration
+  // in setMemoData below — current schema only writes 'free').
+  const LEGACY_MEMO_KEYS = ['q1_1','q1_2','q1_3','q1_4','q1_5','q1_6','q2_1','q2_2','q2_3','q3_1'];
 
   const memoInputs = {}; // key -> textarea element
 
@@ -2104,11 +2073,13 @@
       for (const item of sec.items) {
         const f = document.createElement('div');
         f.className = 'memo-field';
-        const lbl = document.createElement('label');
-        lbl.className = 'memo-field-label';
-        lbl.textContent = item.label;
-        lbl.htmlFor = 'memo-' + item.key;
-        f.appendChild(lbl);
+        if (item.label) {
+          const lbl = document.createElement('label');
+          lbl.className = 'memo-field-label';
+          lbl.textContent = item.label;
+          lbl.htmlFor = 'memo-' + item.key;
+          f.appendChild(lbl);
+        }
         if (item.hint) {
           const hint = document.createElement('div');
           hint.className = 'memo-field-hint';
@@ -2135,16 +2106,26 @@
     return out;
   }
   function setMemoData(data) {
-    // Accept object {q1_1: '...', ...} or legacy string (put into 'free')
+    // Accept object {free: '...'} or legacy string (put into 'free').
+    // Also migrate legacy structured form ({q1_1, q2_3, ...}) into free
+    // when 'free' itself is empty, so existing entries don't lose content.
+    for (const k of Object.keys(memoInputs)) memoInputs[k].value = '';
+    if (data == null) return;
     if (typeof data === 'string') {
-      for (const k of Object.keys(memoInputs)) memoInputs[k].value = '';
       if (memoInputs.free) memoInputs.free.value = data;
       return;
     }
-    const obj = data || {};
-    for (const k of Object.keys(memoInputs)) {
-      memoInputs[k].value = obj[k] || '';
+    if (typeof data !== 'object') return;
+    let freeVal = data.free || '';
+    if (!freeVal) {
+      const parts = [];
+      for (const k of LEGACY_MEMO_KEYS) {
+        const v = (data[k] || '').toString().trim();
+        if (v) parts.push(v);
+      }
+      if (parts.length) freeVal = parts.join('\n\n');
     }
+    if (memoInputs.free) memoInputs.free.value = freeVal;
   }
   function clearMemoData() {
     for (const k of Object.keys(memoInputs)) memoInputs[k].value = '';
