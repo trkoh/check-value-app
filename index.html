@@ -506,8 +506,7 @@
 <div class="panel">
   <h2>アクション</h2>
   <div class="row">
-    <button id="download-btn" type="button" title="元画像と処理済み画像を並べた1枚をダウンロード">💾 ダウンロード</button>
-    <button id="share-btn" type="button" title="ネイティブ共有（モバイル等）" hidden>📤 共有</button>
+    <button id="save-btn" type="button" title="元画像・処理画像・メモを 1 枚の PNG に保存">💾 保存（画像＋メモ）</button>
     <button id="picker-btn" type="button" title="ON にして画像をクリック。元画像→そのRGB/HSV、出力画像→明度＋同明度の色候補">🎨 色を拾う</button>
     <button id="frame-btn" type="button" title="ON にして元画像をドラッグ → トリミング枠。枠外は薄暗くなり、下の分析もこの枠内で計算">🔲 トリミング枠</button>
     <button id="frame-reset-btn" type="button" title="トリミング枠を消す">枠を解除</button>
@@ -963,8 +962,7 @@
     pasteOverlayTitle: document.getElementById('paste-overlay-title'),
     pasteOverlayBtn: document.getElementById('paste-overlay-btn'),
     pasteOverlayClose: document.getElementById('paste-overlay-close'),
-    shareBtn: document.getElementById('share-btn'),
-    downloadBtn: document.getElementById('download-btn'),
+    saveBtn: document.getElementById('save-btn'),
     pickerBtn: document.getElementById('picker-btn'),
     frameBtn: document.getElementById('frame-btn'),
     frameResetBtn: document.getElementById('frame-reset-btn'),
@@ -1418,71 +1416,129 @@
     render();
   });
 
-  // ---------- Share ----------
-  function canShareFiles() {
-    try {
-      const dummy = new File([new Uint8Array(1)], 'x.png', { type: 'image/png' });
-      return !!(navigator.canShare && navigator.canShare({ files: [dummy] }));
-    } catch (e) { return false; }
+  // ---------- Save (images + memo as a single PNG) ----------
+  // Memo text rendering on canvas. Designed to be called from
+  // buildExportCanvas. Returns the y after drawing (or measuring).
+  function processMemoLines(ctx, lines, startX, startY, maxWidth, draw) {
+    const FONTS = {
+      h2: { font: 'bold 20px system-ui, "Hiragino Sans", "Yu Gothic", sans-serif', color: '#111', lh: 28, pad: 10 },
+      h3: { font: 'bold 14px system-ui, "Hiragino Sans", "Yu Gothic", sans-serif', color: '#222', lh: 20, pad: 4 },
+      hint: { font: '11px system-ui, "Hiragino Sans", "Yu Gothic", sans-serif', color: '#777', lh: 16, pad: 2 },
+      ans: { font: '14px system-ui, "Hiragino Sans", "Yu Gothic", sans-serif', color: '#000', lh: 21, pad: 8 },
+    };
+    if (draw) ctx.textBaseline = 'top';
+    let y = startY;
+    for (const ln of lines) {
+      if (ln.kind === 'sep') { y += 12; continue; }
+      const f = FONTS[ln.kind];
+      ctx.font = f.font;
+      if (draw) ctx.fillStyle = (ln.kind === 'ans' && ln.empty) ? '#aaa' : f.color;
+      const paragraphs = (ln.text || '').split('\n');
+      for (const para of paragraphs) {
+        if (para === '') { y += f.lh; continue; }
+        let buf = '';
+        for (const ch of para) {
+          const test = buf + ch;
+          if (ctx.measureText(test).width > maxWidth && buf) {
+            if (draw) ctx.fillText(buf, startX, y);
+            y += f.lh;
+            buf = ch;
+          } else {
+            buf = test;
+          }
+        }
+        if (buf) {
+          if (draw) ctx.fillText(buf, startX, y);
+          y += f.lh;
+        }
+      }
+      y += f.pad;
+    }
+    return y;
   }
-  function buildCombinedCanvas() {
+  function memoTextLines() {
+    const data = getMemoData();
+    const lines = [];
+    for (const sec of MEMO_SCHEMA) {
+      lines.push({ kind: 'h2', text: sec.title });
+      if (sec.note) lines.push({ kind: 'hint', text: sec.note });
+      for (const item of sec.items) {
+        lines.push({ kind: 'h3', text: item.label });
+        if (item.hint) lines.push({ kind: 'hint', text: item.hint });
+        const ans = ((data[item.key] || '') + '').trim();
+        lines.push({ kind: 'ans', text: ans || '（未記入）', empty: !ans });
+      }
+      lines.push({ kind: 'sep' });
+    }
+    return lines;
+  }
+  function buildExportCanvas() {
     const sw = els.srcCanvas.width, sh = els.srcCanvas.height;
     const ow = els.outCanvas.width, oh = els.outCanvas.height;
-    const h = Math.max(sh, oh);
-    const gap = 8;
+    const stripW = sw + 8 + ow;
+    const stripH = Math.max(sh, oh);
+    const PAD = 24;
+    const memoMaxW = Math.max(stripW, 880);
+    const W = memoMaxW + PAD * 2;
+
+    // Measure memo height
+    const tmp = document.createElement('canvas');
+    tmp.width = 1; tmp.height = 1;
+    const tctx = tmp.getContext('2d');
+    const lines = memoTextLines();
+    const memoEndY = processMemoLines(tctx, lines, 0, 0, memoMaxW, false);
+    const titleH = 36; // "メモ" heading
+    const memoH = titleH + memoEndY;
+
+    const H = PAD + stripH + PAD + memoH + PAD;
     const c = document.createElement('canvas');
-    c.width = sw + gap + ow;
-    c.height = h;
+    c.width = W; c.height = H;
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, c.width, c.height);
-    ctx.drawImage(els.srcCanvas, 0, Math.floor((h - sh) / 2));
-    ctx.drawImage(els.outCanvas, sw + gap, Math.floor((h - oh) / 2));
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw image strip, centered horizontally
+    const stripX = PAD + Math.floor((memoMaxW - stripW) / 2);
+    ctx.drawImage(els.srcCanvas, stripX, PAD + Math.floor((stripH - sh) / 2));
+    ctx.drawImage(els.outCanvas, stripX + sw + 8, PAD + Math.floor((stripH - oh) / 2));
+
+    // Memo title + body
+    let y = PAD + stripH + PAD;
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 22px system-ui, "Hiragino Sans", "Yu Gothic", sans-serif';
+    ctx.fillText('メモ（光源・固有色・面の認識）', PAD, y);
+    y += titleH;
+    processMemoLines(ctx, lines, PAD, y, memoMaxW, true);
+
     return c;
   }
-  async function buildCombinedBlob() {
+  async function saveOutput() {
     if (els.outCanvas.width === 0 || els.srcCanvas.width === 0) {
       setStatus('出力画像がありません', true);
-      return null;
+      return;
     }
-    const combined = buildCombinedCanvas();
+    let combined;
+    try {
+      combined = buildExportCanvas();
+    } catch (e) {
+      setStatus('出力組立に失敗: ' + (e && e.message ? e.message : e), true);
+      return;
+    }
     const blob = await new Promise(r => combined.toBlob(r, 'image/png'));
-    if (!blob) { setStatus('画像化に失敗', true); return null; }
-    return blob;
-  }
-  async function downloadOutput() {
-    const blob = await buildCombinedBlob();
-    if (!blob) return;
+    if (!blob) { setStatus('画像化に失敗', true); return; }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'value.png';
+    const ts = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+    a.download = 'value-' + ts + '.png';
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setStatus('ダウンロード開始');
+    setStatus('保存しました');
   }
-  async function shareOutput() {
-    const blob = await buildCombinedBlob();
-    if (!blob) return;
-    const file = new File([blob], 'value.png', { type: 'image/png' });
-    if (!canShareFiles()) {
-      setStatus('この端末ではネイティブ共有不可。ダウンロードを使ってください', true);
-      return;
-    }
-    try {
-      await navigator.share({ files: [file], title: 'ヴァルール変換' });
-      setStatus('共有を開きました');
-    } catch (e) {
-      if (e && e.name === 'AbortError') return;
-      setStatus('共有失敗: ' + (e && e.message ? e.message : e), true);
-    }
-  }
-  els.downloadBtn.addEventListener('click', downloadOutput);
-  els.shareBtn.addEventListener('click', shareOutput);
-  // Show share button only if File-share is supported on this device
-  if (canShareFiles()) els.shareBtn.hidden = false;
+  els.saveBtn.addEventListener('click', saveOutput);
 
   // ---------- Reverse value picker ----------
   function hidePalette() {
