@@ -506,7 +506,8 @@
 <div class="panel">
   <h2>アクション</h2>
   <div class="row">
-    <button id="share-btn" type="button" title="元画像と処理済み画像を並べた1枚を保存/共有">📤 共有 / 保存</button>
+    <button id="download-btn" type="button" title="元画像と処理済み画像を並べた1枚をダウンロード">💾 ダウンロード</button>
+    <button id="share-btn" type="button" title="ネイティブ共有（モバイル等）" hidden>📤 共有</button>
     <button id="picker-btn" type="button" title="ON にして画像をクリック。元画像→そのRGB/HSV、出力画像→明度＋同明度の色候補">🎨 色を拾う</button>
     <button id="frame-btn" type="button" title="ON にして元画像をドラッグ → トリミング枠。枠外は薄暗くなり、下の分析もこの枠内で計算">🔲 トリミング枠</button>
     <button id="frame-reset-btn" type="button" title="トリミング枠を消す">枠を解除</button>
@@ -963,6 +964,7 @@
     pasteOverlayBtn: document.getElementById('paste-overlay-btn'),
     pasteOverlayClose: document.getElementById('paste-overlay-close'),
     shareBtn: document.getElementById('share-btn'),
+    downloadBtn: document.getElementById('download-btn'),
     pickerBtn: document.getElementById('picker-btn'),
     frameBtn: document.getElementById('frame-btn'),
     frameResetBtn: document.getElementById('frame-reset-btn'),
@@ -1438,34 +1440,49 @@
     ctx.drawImage(els.outCanvas, sw + gap, Math.floor((h - oh) / 2));
     return c;
   }
-  async function shareOutput() {
+  async function buildCombinedBlob() {
     if (els.outCanvas.width === 0 || els.srcCanvas.width === 0) {
       setStatus('出力画像がありません', true);
-      return;
+      return null;
     }
     const combined = buildCombinedCanvas();
     const blob = await new Promise(r => combined.toBlob(r, 'image/png'));
-    if (!blob) { setStatus('画像化に失敗', true); return; }
-    const file = new File([blob], 'value.png', { type: 'image/png' });
-    if (canShareFiles()) {
-      try {
-        await navigator.share({ files: [file], title: 'ヴァルール変換' });
-        setStatus('共有を開きました');
-        return;
-      } catch (e) {
-        if (e && e.name === 'AbortError') return; // user cancelled
-      }
-    }
-    // fallback: download
+    if (!blob) { setStatus('画像化に失敗', true); return null; }
+    return blob;
+  }
+  async function downloadOutput() {
+    const blob = await buildCombinedBlob();
+    if (!blob) return;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'value.png';
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setStatus('ダウンロードしました');
+    setStatus('ダウンロード開始');
   }
+  async function shareOutput() {
+    const blob = await buildCombinedBlob();
+    if (!blob) return;
+    const file = new File([blob], 'value.png', { type: 'image/png' });
+    if (!canShareFiles()) {
+      setStatus('この端末ではネイティブ共有不可。ダウンロードを使ってください', true);
+      return;
+    }
+    try {
+      await navigator.share({ files: [file], title: 'ヴァルール変換' });
+      setStatus('共有を開きました');
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      setStatus('共有失敗: ' + (e && e.message ? e.message : e), true);
+    }
+  }
+  els.downloadBtn.addEventListener('click', downloadOutput);
   els.shareBtn.addEventListener('click', shareOutput);
+  // Show share button only if File-share is supported on this device
+  if (canShareFiles()) els.shareBtn.hidden = false;
 
   // ---------- Reverse value picker ----------
   function hidePalette() {
