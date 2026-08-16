@@ -82,7 +82,15 @@
   canvas.pickable { cursor: crosshair; }
   canvas.framing { cursor: crosshair; }
 
-  .canvas-wrap { position: relative; overflow: hidden; border-radius: 3px; }
+  .canvas-wrap { position: relative; overflow: hidden; border-radius: 3px; touch-action: pan-y; }
+  .zoom-inner { position: relative; width: 100%; }
+
+  .zoom-controls { display: inline-flex; border: 1px solid #555; border-radius: 4px; overflow: hidden; }
+  .zoom-controls button {
+    border: none; border-right: 1px solid #555; border-radius: 0;
+    min-width: 2.6rem; justify-content: center;
+  }
+  .zoom-controls button:last-child { border-right: none; }
   .frame-overlay {
     position: absolute; pointer-events: none;
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
@@ -515,6 +523,17 @@
       色を拾う: 各画像クリック→HSVオーバーレイ。出力は下に同明度の色候補も。トリミング枠: 元画像ドラッグ
     </span>
   </div>
+  <div class="row">
+    <span class="control-label">拡大</span>
+    <div class="zoom-controls">
+      <button id="zoom-out-btn" type="button" title="縮小">－</button>
+      <button id="zoom-reset-btn" type="button" title="クリックで等倍に戻す">100%</button>
+      <button id="zoom-in-btn" type="button" title="拡大">＋</button>
+    </div>
+    <span style="color: var(--muted); font-size: 0.8rem;">
+      Ctrl/Cmd+ホイールやピンチ操作でも拡大縮小。拡大中は画像をドラッグで移動、ダブルクリックで等倍に戻す
+    </span>
+  </div>
   <div class="picked-history-row" id="picked-history-row" hidden>
     <span style="color: var(--muted); font-size: 0.8rem;">スポイト履歴:</span>
     <div class="picked-history-list" id="picked-history-list"></div>
@@ -525,11 +544,13 @@
 <div class="grid">
   <figure>
     <figcaption>入力 (カラー)</figcaption>
-    <div class="canvas-wrap">
-      <canvas id="canvas-src"></canvas>
-      <canvas class="sat-map" id="sat-map-canvas" hidden></canvas>
-      <div class="frame-overlay" id="frame-overlay-src" hidden></div>
-      <div class="pick-marker" id="pick-marker-src" hidden></div>
+    <div class="canvas-wrap" id="wrap-src">
+      <div class="zoom-inner" id="zoom-inner-src">
+        <canvas id="canvas-src"></canvas>
+        <canvas class="sat-map" id="sat-map-canvas" hidden></canvas>
+        <div class="frame-overlay" id="frame-overlay-src" hidden></div>
+        <div class="pick-marker" id="pick-marker-src" hidden></div>
+      </div><!-- /zoom-inner-src -->
       <div class="src-hsv-overlay" id="src-hsv-overlay" hidden>
         <div class="selected-row">
           <div class="selected-swatch-large" id="src-selected-swatch"></div>
@@ -566,10 +587,12 @@
   </figure>
   <figure>
     <figcaption id="out-caption">出力（ヴァルール確認用）</figcaption>
-    <div class="canvas-wrap">
-      <canvas id="canvas-out"></canvas>
-      <div class="frame-overlay" id="frame-overlay-out" hidden></div>
-      <div class="pick-marker" id="pick-marker-out" hidden></div>
+    <div class="canvas-wrap" id="wrap-out">
+      <div class="zoom-inner" id="zoom-inner-out">
+        <canvas id="canvas-out"></canvas>
+        <div class="frame-overlay" id="frame-overlay-out" hidden></div>
+        <div class="pick-marker" id="pick-marker-out" hidden></div>
+      </div><!-- /zoom-inner-out -->
       <div class="src-hsv-overlay" id="out-hsv-overlay" hidden>
         <div class="selected-row">
           <div class="selected-swatch-large" id="out-selected-swatch"></div>
@@ -940,6 +963,7 @@
     frameMode: false,
     frame: null, // normalized {x, y, w, h} in [0, 1] of src canvas, or null
     satMapOn: false,
+    zoom: 1,
   };
 
   const els = {
@@ -950,6 +974,13 @@
     status: document.getElementById('status'),
     srcCanvas: document.getElementById('canvas-src'),
     outCanvas: document.getElementById('canvas-out'),
+    srcWrap: document.getElementById('wrap-src'),
+    outWrap: document.getElementById('wrap-out'),
+    srcZoomInner: document.getElementById('zoom-inner-src'),
+    outZoomInner: document.getElementById('zoom-inner-out'),
+    zoomInBtn: document.getElementById('zoom-in-btn'),
+    zoomOutBtn: document.getElementById('zoom-out-btn'),
+    zoomResetBtn: document.getElementById('zoom-reset-btn'),
     outCaption: document.getElementById('out-caption'),
     posterizeSelect: document.getElementById('posterize-levels'),
     squintRange: document.getElementById('squint-range'),
@@ -1166,6 +1197,7 @@
     const srcCtx = els.srcCanvas.getContext('2d');
     els.srcCanvas.width = w;
     els.srcCanvas.height = h;
+    updateWrapAspect(w, h);
     if (state.squint > 0 && NATIVE_CANVAS_BLUR_OK) {
       srcCtx.filter = `blur(${state.squint}px)`;
       srcCtx.drawImage(state.srcSource, 0, 0, w, h);
@@ -1194,6 +1226,184 @@
     updateSatMap();
   }
 
+  // ---------- Zoom / pan ----------
+  // Both canvas-wraps share one zoom level and scroll position (src/out are
+  // always the same pixel dimensions), so panning one pans the matching
+  // region of the other — handy for comparing the same spot in both.
+  const ZOOM_MIN = 1, ZOOM_MAX = 8;
+  let panMoved = false; // set when a mouse/touch drag moved past the click threshold
+
+  function updateWrapAspect(w, h) {
+    if (!w || !h) return;
+    const ar = w + ' / ' + h;
+    els.srcWrap.style.aspectRatio = ar;
+    els.outWrap.style.aspectRatio = ar;
+  }
+  function setZoomInnerSize() {
+    const pct = (state.zoom * 100) + '%';
+    els.srcZoomInner.style.width = pct;
+    els.outZoomInner.style.width = pct;
+  }
+  function setScrollBoth(left, top) {
+    for (const w of [els.srcWrap, els.outWrap]) {
+      const maxLeft = Math.max(0, w.scrollWidth - w.clientWidth);
+      const maxTop = Math.max(0, w.scrollHeight - w.clientHeight);
+      w.scrollLeft = Math.max(0, Math.min(maxLeft, left));
+      w.scrollTop = Math.max(0, Math.min(maxTop, top));
+    }
+  }
+  function updateZoomUI() {
+    els.zoomResetBtn.textContent = Math.round(state.zoom * 100) + '%';
+    els.zoomOutBtn.disabled = state.zoom <= ZOOM_MIN + 1e-6;
+    els.zoomInBtn.disabled = state.zoom >= ZOOM_MAX - 1e-6;
+    els.srcWrap.classList.toggle('zoom-active', state.zoom > 1);
+    els.outWrap.classList.toggle('zoom-active', state.zoom > 1);
+    const srcGrab = state.zoom > 1 && !state.frameMode && !state.pickerOn;
+    const outGrab = state.zoom > 1 && !state.pickerOn;
+    els.srcCanvas.style.cursor = srcGrab ? 'grab' : '';
+    els.outCanvas.style.cursor = outGrab ? 'grab' : '';
+  }
+  function resetZoomView() {
+    state.zoom = 1;
+    setZoomInnerSize();
+    setScrollBoth(0, 0);
+    updateZoomUI();
+  }
+  // Zoom to newZoom, keeping the content under (clientX, clientY) fixed on screen.
+  function applyZoomAtPoint(newZoom, clientX, clientY, refWrap) {
+    if (!state.srcSource) return;
+    newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, newZoom));
+    if (Math.abs(newZoom - state.zoom) < 1e-6) return;
+    const wrap = refWrap || els.srcWrap;
+    const rect = wrap.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const contentX = wrap.scrollLeft + px;
+    const contentY = wrap.scrollTop + py;
+    const ratio = newZoom / state.zoom;
+    state.zoom = newZoom;
+    setZoomInnerSize();
+    setScrollBoth(contentX * ratio - px, contentY * ratio - py);
+    updateZoomUI();
+  }
+  function zoomButtonStep(factor) {
+    if (!state.srcSource) return;
+    const rect = els.srcWrap.getBoundingClientRect();
+    applyZoomAtPoint(state.zoom * factor, rect.left + rect.width / 2, rect.top + rect.height / 2, els.srcWrap);
+  }
+  els.zoomInBtn.addEventListener('click', () => zoomButtonStep(1.5));
+  els.zoomOutBtn.addEventListener('click', () => zoomButtonStep(1 / 1.5));
+  els.zoomResetBtn.addEventListener('click', resetZoomView);
+
+  function onWheelZoom(e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (!state.srcSource) return;
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0025);
+    applyZoomAtPoint(state.zoom * factor, e.clientX, e.clientY, e.currentTarget);
+  }
+  els.srcWrap.addEventListener('wheel', onWheelZoom, { passive: false });
+  els.outWrap.addEventListener('wheel', onWheelZoom, { passive: false });
+
+  function onDblClickZoom(e) {
+    if (state.zoom > 1) { e.preventDefault(); resetZoomView(); }
+  }
+  els.srcWrap.addEventListener('dblclick', onDblClickZoom);
+  els.outWrap.addEventListener('dblclick', onDblClickZoom);
+
+  // Mouse drag-to-pan (only once zoomed in; frame mode on the src image
+  // takes priority over panning there, same as it does over the picker).
+  let mousePan = null;
+  function mousePanStart(e, wrap) {
+    if (e.button !== 0) return;
+    if (wrap === els.srcWrap && state.frameMode) return;
+    if (state.zoom <= 1) return;
+    mousePan = {
+      startX: e.clientX, startY: e.clientY,
+      startScrollLeft: wrap.scrollLeft, startScrollTop: wrap.scrollTop,
+      moved: false,
+    };
+    e.preventDefault();
+  }
+  els.srcWrap.addEventListener('mousedown', (e) => mousePanStart(e, els.srcWrap));
+  els.outWrap.addEventListener('mousedown', (e) => mousePanStart(e, els.outWrap));
+  window.addEventListener('mousemove', (e) => {
+    if (!mousePan) return;
+    const dx = e.clientX - mousePan.startX;
+    const dy = e.clientY - mousePan.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) mousePan.moved = true;
+    setScrollBoth(mousePan.startScrollLeft - dx, mousePan.startScrollTop - dy);
+  });
+  window.addEventListener('mouseup', () => {
+    if (mousePan) {
+      panMoved = mousePan.moved;
+      mousePan = null;
+    }
+  });
+
+  // Touch: one finger pans (when zoomed), two fingers pinch-zoom.
+  let touchPan = null;
+  let touchPinch = null;
+  function touchDist(t0, t1) { return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY); }
+  function touchMid(t0, t1) { return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 }; }
+  function zoomTouchStart(e, wrap) {
+    if (e.touches.length === 2) {
+      touchPan = null;
+      touchPinch = {
+        startDist: touchDist(e.touches[0], e.touches[1]),
+        startZoom: state.zoom,
+        mid: touchMid(e.touches[0], e.touches[1]),
+        wrap,
+      };
+      e.preventDefault();
+    } else if (e.touches.length === 1) {
+      touchPinch = null;
+      if (wrap === els.srcWrap && state.frameMode) return;
+      if (state.zoom <= 1) return;
+      const t = e.touches[0];
+      touchPan = {
+        startX: t.clientX, startY: t.clientY,
+        startScrollLeft: wrap.scrollLeft, startScrollTop: wrap.scrollTop,
+        moved: false,
+      };
+      e.preventDefault();
+    }
+  }
+  function zoomTouchMove(e) {
+    if (touchPinch && e.touches.length === 2) {
+      e.preventDefault();
+      const d = touchDist(e.touches[0], e.touches[1]);
+      if (touchPinch.startDist > 0) {
+        applyZoomAtPoint(touchPinch.startZoom * (d / touchPinch.startDist), touchPinch.mid.x, touchPinch.mid.y, touchPinch.wrap);
+      }
+    } else if (touchPan && e.touches.length === 1) {
+      e.preventDefault();
+      const t = e.touches[0];
+      const dx = t.clientX - touchPan.startX;
+      const dy = t.clientY - touchPan.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) touchPan.moved = true;
+      setScrollBoth(touchPan.startScrollLeft - dx, touchPan.startScrollTop - dy);
+    }
+  }
+  function zoomTouchEnd() {
+    if (touchPan) {
+      if (touchPan.moved) panMoved = true;
+      touchPan = null;
+    }
+    touchPinch = null;
+  }
+  els.srcWrap.addEventListener('touchstart', (e) => zoomTouchStart(e, els.srcWrap), { passive: false });
+  els.outWrap.addEventListener('touchstart', (e) => zoomTouchStart(e, els.outWrap), { passive: false });
+  els.srcWrap.addEventListener('touchmove', zoomTouchMove, { passive: false });
+  els.outWrap.addEventListener('touchmove', zoomTouchMove, { passive: false });
+  els.srcWrap.addEventListener('touchend', zoomTouchEnd);
+  els.outWrap.addEventListener('touchend', zoomTouchEnd);
+  els.srcWrap.addEventListener('touchcancel', zoomTouchEnd);
+  els.outWrap.addEventListener('touchcancel', zoomTouchEnd);
+
+  updateZoomUI();
+
   // ---------- Image loading ----------
   function loadImage(src, crossOrigin) {
     return new Promise((res, rej) => {
@@ -1210,6 +1420,7 @@
       const img = await loadImage(src, opts.crossOrigin);
       state.srcSource = img;
       state.frame = null;
+      resetZoomView();
       hidePalette();
       els.srcHsvOverlay.hidden = true;
       els.outHsvOverlay.hidden = true;
@@ -1375,6 +1586,7 @@
     snap.getContext('2d').drawImage(v, 0, 0);
     state.srcSource = snap;
     state.frame = null;
+    resetZoomView();
     closeCamera();
     hidePalette();
     els.srcHsvOverlay.hidden = true;
@@ -1813,12 +2025,14 @@
     els.pickMarkerOut.hidden = true;
   });
   els.outCanvas.addEventListener('click', (e) => {
+    if (panMoved) { panMoved = false; return; }
     if (!state.pickerOn) return;
     const { x, y } = eventToCanvasXY(e, els.outCanvas);
     showColorFromOut(x, y);
     showPaletteAt(x, y);
   });
   els.srcCanvas.addEventListener('click', (e) => {
+    if (panMoved) { panMoved = false; return; }
     if (!state.pickerOn || state.frameMode) return;
     const { x, y } = eventToCanvasXY(e, els.srcCanvas);
     showColorFromSrc(x, y);
@@ -1837,6 +2051,7 @@
     } else {
       setStatus('元画像クリック=その色のHSV / 出力画像クリック=HSV + 同明度の色候補');
     }
+    updateZoomUI();
   });
 
   // ---------- Frame (trim/reframe) ----------
@@ -1917,6 +2132,7 @@
     els.srcCanvas.classList.toggle('framing', state.frameMode);
     els.srcCanvas.classList.toggle('pickable', state.pickerOn && !state.frameMode);
     if (state.frameMode) setStatus('元画像をドラッグしてトリミング枠を設定');
+    updateZoomUI();
   });
   els.frameResetBtn.addEventListener('click', () => {
     state.frame = null;
